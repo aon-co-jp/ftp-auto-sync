@@ -85,6 +85,90 @@ def _cwd_create_chain(ftp: FTP, segments: list[str]) -> None:
             ftp.cwd(name)
 
 
+def enumerate_remote_directory_paths(
+    ftp: FTP,
+    remote_root_segments: list[str],
+    max_depth: int,
+) -> list[list[str]]:
+    """
+    remote_root 直下から最大 max_depth 階層まで辿り、見つかった各ディレクトリの
+    remote_root からの相対セグメント列を列挙（各要素の末尾がそのディレクトリ名）。
+    """
+    saved = ftp.pwd()
+    found: list[list[str]] = []
+
+    def list_children() -> list[str]:
+        try:
+            raw = ftp.nlst()
+        except Exception:
+            return []
+        names: list[str] = []
+        for x in raw:
+            n = Path(x).name
+            if n and n not in (".", ".."):
+                names.append(n)
+        return sorted(set(names))
+
+    def is_dir(name: str) -> bool:
+        try:
+            ftp.cwd(name)
+            ftp.cwd("..")
+            return True
+        except Exception:
+            return False
+
+    def walk(rel_from_remote_root: list[str], depth: int) -> None:
+        if depth > max_depth:
+            return
+        for child in list_children():
+            if not is_dir(child):
+                continue
+            path_here = rel_from_remote_root + [child]
+            found.append(path_here)
+            if depth >= max_depth:
+                continue
+            try:
+                ftp.cwd(child)
+                walk(path_here, depth + 1)
+            finally:
+                try:
+                    ftp.cwd("..")
+                except Exception:
+                    pass
+
+    try:
+        _cwd_create_chain(ftp, remote_root_segments)
+        walk([], 0)
+    finally:
+        try:
+            ftp.cwd(saved)
+        except Exception:
+            pass
+
+    return found
+
+
+def build_remote_folder_name_index(paths: list[list[str]]) -> dict[str, list[list[str]]]:
+    """フォルダ名（小文字）→ その名前で終わるリモート相対パス（複数可）。"""
+    from collections import defaultdict
+
+    idx: dict[str, list[list[str]]] = defaultdict(list)
+    for p in paths:
+        if p:
+            idx[p[-1].lower()].append(p)
+    return dict(idx)
+
+
+def index_signature(idx: dict[str, list[list[str]]]) -> str:
+    body = {
+        k: sorted("/".join(x) for x in v)
+        for k, v in sorted(idx.items(), key=lambda kv: kv[0])
+    }
+    return hashlib.sha256(
+        json.dumps(body, sort_keys=True, ensure_ascii=True).encode("utf-8")
+    ).hexdigest()
+
+
 def discover_remote_anchor_paths(
     ftp: FTP,
     remote_root_segments: list[str],
@@ -229,6 +313,36 @@ def build_mapping_summary_text(
     return "\n".join(lines)
 
 
+def build_auto_mapping_summary_text(
+    local_root: Path,
+    remote_root: str,
+    max_depth: int,
+    total_dirs: int,
+    index: dict[str, list[list[str]]],
+) -> str:
+    sample_keys = sorted(index.keys())[:24]
+    lines = [
+        "【同期マッピングの確認（自動・同名フォルダ照合）】",
+        f"ローカル監視ルート: {local_root}",
+        f"FTP リモート先頭: {remote_root or '(ルート)'}",
+        f"サーバー側の探索深さ: 先頭から最大 {max_depth} 階層",
+        f"サーバー上で見つかったディレクトリ数: {total_dirs}",
+        f"フォルダ名の種類（索引）: {len(index)}",
+        "",
+        "ローカルのパスに含まれるフォルダ名のうち、上記の範囲でサーバーにも存在する名前と突き合わせ、",
+        "階層が数段ずれていても最短のリモートパスへ UPLOAD します（同名が複数ある場合は浅いパスを優先）。",
+        "",
+        "検出されたフォルダ名の例（先頭24件）:",
+    ]
+    for k in sample_keys:
+        lines.append(f"  - {k}")
+    if len(index) > 24:
+        lines.append(f"  … 他 {len(index) - 24} 件")
+    lines.append("")
+    lines.append("この内容で同期してよいですか？")
+    return "\n".join(lines)
+
+
 def _template_question(summary: str) -> str:
     return summary
 
@@ -292,6 +406,7 @@ def prepare_anchor_sync_or_legacy(
     """
     戻り値:
       - {"type": "legacy", "remote_root": str} 従来の相対パス同期
+      - {"type": "anchor_auto", "remote_root_segments", "remote_folder_index", ...} 同名フォルダ自動照合
       - {"type": "anchor", "anchor_name": str, "remote_root_segments": list[str],
          "anchor_rel_under_remote_root": list[str]}  # remote_root 直下から見たアンカーまでの相対
     None = ユーザーがキャンセル
@@ -302,12 +417,50 @@ def prepare_anchor_sync_or_legacy(
     remote_segs = [s for s in remote_root.split("/") if s] if remote_root else []
     local_root = Path(sync["local_root"]).expanduser().resolve()
     use_anchor = bool(sync.get("use_anchor_sync", False))
-    anchor = (sync.get("anchor_folder_name") or "").strip()
-    if not use_anchor or not anchor:
+    if not use_anchor:
         return {"type": "legacy", "remote_root": remote_root}
 
     max_depth = int(sync.get("max_anchor_search_depth", 3))
     max_depth = max(0, min(max_depth, 128))
+    anchor_auto_match = bool(sync.get("anchor_auto_match", True))
+    anchor = (sync.get("anchor_folder_name") or "").strip()
+
+    if anchor_auto_match:
+        with ftp_connection(ftp_cfg) as ftp:
+            all_paths = enumerate_remote_directory_paths(ftp, remote_segs, max_depth)
+        index = build_remote_folder_name_index(all_paths)
+        if not index:
+            raise RuntimeError(
+                f"サーバー上の「{remote_root or '(ルート)'}」から {max_depth} 階層以内に "
+                "ディレクトリが見つかりませんでした。リモート先頭パス・接続・探索深さを確認してください。"
+            )
+        sig = index_signature(index)
+        prof = profile_key(str(local_root), remote_root, "__auto__", profile_id)
+        if is_mapping_approved(prof, sig):
+            LOG.info("自動同名フォルダ照合は前回承認済みのため確認を省略します。")
+            return {
+                "type": "anchor_auto",
+                "remote_root_segments": remote_segs,
+                "remote_folder_index": index,
+                "max_anchor_search_depth": max_depth,
+            }
+        summary = build_auto_mapping_summary_text(
+            local_root, remote_root, max_depth, len(all_paths), index
+        )
+        ai_cfg = config.get("ai") or {}
+        question = ai_paraphrase_question(summary, ai_cfg)
+        if not ask_yes_no(app_title, question):
+            return None
+        record_mapping_approval(prof, sig)
+        return {
+            "type": "anchor_auto",
+            "remote_root_segments": remote_segs,
+            "remote_folder_index": index,
+            "max_anchor_search_depth": max_depth,
+        }
+
+    if not anchor:
+        return {"type": "legacy", "remote_root": remote_root}
 
     with ftp_connection(ftp_cfg) as ftp:
         candidates = discover_remote_anchor_paths(ftp, remote_segs, anchor, max_depth)
@@ -350,6 +503,39 @@ def prepare_anchor_sync_or_legacy(
     }
 
 
+def pick_anchor_auto(
+    local_file: Path,
+    local_root: Path,
+    mapping: dict[str, Any],
+) -> tuple[list[str], str, list[str]] | None:
+    """
+    同名フォルダ自動照合: ローカルパスのディレクトリセグメントを末尾側から見て、
+    リモート索引に存在する最初の名前で同期点を決める（最深優先）。
+    戻り値: (FTP で cwd するディレクトリ列, ファイル名, 同期点より下のローカル subdir 列)
+    """
+    idx = mapping.get("remote_folder_index") or {}
+    try:
+        rel = local_file.resolve().relative_to(local_root.resolve())
+    except ValueError:
+        return None
+    parts = rel.parts
+    if len(parts) < 2:
+        return None
+    fname = parts[-1]
+    dir_parts = list(parts[:-1])
+    rr_segs = list(mapping.get("remote_root_segments") or [])
+    for j in range(len(dir_parts) - 1, -1, -1):
+        seg = dir_parts[j]
+        tail = dir_parts[j + 1 :]
+        candidates = idx.get(seg.lower(), [])
+        if not candidates:
+            continue
+        chosen = choose_shortest_candidate(candidates)
+        full_dir = rr_segs + chosen + tail
+        return full_dir, fname, tail
+    return None
+
+
 def upload_path_parts_for_file(
     local_file: Path,
     local_root: Path,
@@ -358,6 +544,7 @@ def upload_path_parts_for_file(
     """
     STOR 用: (cwd 用ディレクトリセグメント列（ホームからフルパス）、ファイル名)
     legacy: remote_root + rel(local)
+    anchor_auto: サーバー側のフォルダ名索引で同名を照合
     anchor: remote_root + chosen_rel + tail_under_anchor
     """
     if mapping.get("type") == "legacy":
@@ -367,6 +554,13 @@ def upload_path_parts_for_file(
         if not parts:
             return [], local_file.name
         return parts[:-1], parts[-1]
+
+    if mapping.get("type") == "anchor_auto":
+        picked = pick_anchor_auto(local_file, local_root, mapping)
+        if picked is None:
+            return None
+        dir_parts, fn, _tail = picked
+        return dir_parts, fn
 
     if mapping.get("type") != "anchor":
         return None

@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+from queue import Queue
 import sys
 import threading
 import time
@@ -17,7 +18,7 @@ from ftplib import FTP, error_perm
 from pathlib import Path
 from typing import Any
 
-from anchor_sync import local_file_under_anchor, split_local_at_anchor, upload_path_parts_for_file
+from anchor_sync import pick_anchor_auto, split_local_at_anchor, upload_path_parts_for_file
 from dotenv import load_dotenv
 from ftp_util import ftp_connection
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
@@ -57,6 +58,12 @@ def _depth_exceeds_sync_limit(
         path.resolve().relative_to(local_root.resolve())
     except ValueError:
         return True
+    if sync_mapping and sync_mapping.get("type") == "anchor_auto":
+        picked = pick_anchor_auto(path, local_root, sync_mapping)
+        if picked is None:
+            return True
+        _full, _fn, tail_dirs = picked
+        return len(tail_dirs) > lim
     if sync_mapping and sync_mapping.get("type") == "anchor":
         an = sync_mapping.get("anchor_name") or ""
         sp = split_local_at_anchor(path, local_root, an) if an else None
@@ -76,9 +83,8 @@ def should_skip(
     cfg: dict[str, Any],
     sync_mapping: dict[str, Any] | None = None,
 ) -> bool:
-    if sync_mapping and sync_mapping.get("type") == "anchor":
-        an = sync_mapping.get("anchor_name") or ""
-        if an and not local_file_under_anchor(path, local_root, an):
+    if sync_mapping and sync_mapping.get("type") in ("anchor", "anchor_auto"):
+        if upload_path_parts_for_file(path, local_root, sync_mapping) is None:
             return True
     if _depth_exceeds_sync_limit(path, local_root, cfg, sync_mapping):
         return True
@@ -155,11 +161,11 @@ def upload_file(
     local_root: Path,
     sync_mapping: dict[str, Any],
     backup_remote_previous: bool = True,
-) -> None:
+) -> bool:
     parts = upload_path_parts_for_file(local_path, local_root, sync_mapping)
     if parts is None:
         LOG.debug("アップロード対象外（アンカー外など）: %s", local_path)
-        return
+        return False
     dir_parts, filename = parts
 
     start = ftp.pwd()
@@ -189,6 +195,7 @@ def upload_file(
             ftp.cwd(start)
         except Exception:
             pass
+    return True
 
 
 class DebouncedUploader:
@@ -198,11 +205,13 @@ class DebouncedUploader:
         sync_cfg: dict[str, Any],
         local_root: Path,
         sync_mapping: dict[str, Any],
+        v2_event_queue: Queue | None = None,
     ) -> None:
         self._ftp_cfg = ftp_cfg
         self._sync_cfg = sync_cfg
         self._local_root = local_root.resolve()
         self._sync_mapping = sync_mapping
+        self._v2_event_queue = v2_event_queue
         self._debounce = float(sync_cfg.get("debounce_seconds") or 1.0)
         self._timers: dict[str, threading.Timer] = {}
         self._lock = threading.Lock()
@@ -240,24 +249,66 @@ class DebouncedUploader:
             try:
                 with ftp_connection(self._ftp_cfg) as ftp:
                     backup = bool(self._sync_cfg.get("backup_remote_previous", True))
-                    upload_file(
+                    ok = upload_file(
                         ftp,
                         local_path,
                         self._local_root,
                         self._sync_mapping,
                         backup_remote_previous=backup,
                     )
+                    if (
+                        ok
+                        and self._v2_event_queue is not None
+                        and self._sync_cfg.get("v2_git_ai_prompt")
+                    ):
+                        try:
+                            self._v2_event_queue.put_nowait(
+                                {"kind": "upload", "path": str(local_path.resolve())}
+                            )
+                        except Exception:
+                            pass
             except Exception:
                 LOG.exception("アップロード失敗: %s", local_path)
 
 
 class SyncEventHandler(FileSystemEventHandler):
-    def __init__(self, uploader: DebouncedUploader, local_root: Path) -> None:
+    def __init__(
+        self,
+        uploader: DebouncedUploader,
+        local_root: Path,
+        sync_cfg: dict[str, Any],
+        v2_event_queue: Queue | None,
+    ) -> None:
         super().__init__()
         self._uploader = uploader
         self._local_root = local_root.resolve()
+        self._sync_cfg = sync_cfg
+        self._v2_event_queue = v2_event_queue
 
     def on_any_event(self, event: FileSystemEvent) -> None:
+        if (
+            self._v2_event_queue is not None
+            and self._sync_cfg.get("v2_git_ai_prompt")
+            and event.event_type == "moved"
+        ):
+            try:
+                src_p = Path(event.src_path)
+                dest_p = Path(event.dest_path)
+                lr = str(self._local_root)
+                if str(src_p.resolve()).startswith(lr) or str(dest_p.resolve()).startswith(
+                    lr
+                ):
+                    self._v2_event_queue.put_nowait(
+                        {
+                            "kind": "rename",
+                            "src": str(src_p),
+                            "dest": str(dest_p),
+                            "is_dir": event.is_directory,
+                        }
+                    )
+            except Exception:
+                LOG.exception("Ver2 rename queue")
+
         if event.is_directory:
             return
         if event.event_type not in ("modified", "created", "moved"):
@@ -271,9 +322,15 @@ class SyncEventHandler(FileSystemEventHandler):
 class WatcherService:
     """GUI / CLI: sync_mapping は呼び出し元で prepare_anchor_sync_or_legacy 済み。"""
 
-    def __init__(self, config_source: Path | dict[str, Any], sync_mapping: dict[str, Any]) -> None:
+    def __init__(
+        self,
+        config_source: Path | dict[str, Any],
+        sync_mapping: dict[str, Any],
+        v2_event_queue: Queue | None = None,
+    ) -> None:
         self._config_source = config_source
         self._sync_mapping = sync_mapping
+        self._v2_event_queue = v2_event_queue
         self._observer: Observer | None = None
         self._uploader: DebouncedUploader | None = None
 
@@ -292,9 +349,18 @@ class WatcherService:
             raise RuntimeError(f"local_root が存在しません: {local_root}")
 
         self._uploader = DebouncedUploader(
-            ftp_cfg, sync_cfg, local_root, self._sync_mapping
+            ftp_cfg,
+            sync_cfg,
+            local_root,
+            self._sync_mapping,
+            v2_event_queue=self._v2_event_queue,
         )
-        handler = SyncEventHandler(self._uploader, local_root)
+        handler = SyncEventHandler(
+            self._uploader,
+            local_root,
+            sync_cfg,
+            self._v2_event_queue,
+        )
         observer = Observer()
         recursive = bool(sync_cfg.get("recursive", True))
         observer.schedule(handler, str(local_root), recursive=recursive)
