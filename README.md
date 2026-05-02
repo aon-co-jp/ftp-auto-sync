@@ -3,6 +3,13 @@
 **EN:** Watch a local folder and sync changes to FTP on Windows — optional anchor mapping, AI confirmation, and many profiles.  
 **JA:** Windows 向けにローカルフォルダを監視し、変更を FTP に同期するツールです。アンカー階層の揃え方、AI による確認、多数プロファイルに対応します。
 
+### Short descriptions for Git hosts (GitHub「About」など)
+
+Copy from these one-line files:
+
+- **English:** [`DESCRIPTION.en.txt`](DESCRIPTION.en.txt)
+- **日本語:** [`DESCRIPTION.ja.txt`](DESCRIPTION.ja.txt)
+
 ---
 
 ## English
@@ -85,6 +92,13 @@ Issues and pull requests are welcome.
 - マッピングの **承認をキャッシュ**；任意で **OpenAI 互換 API** により確認文を言い換え
 - **`max_sync_directory_depth`**: 同期するディレクトリの深さ上限（`-1` で無制限）
 - SQLite に **最大 10 万件**のプロファイル（`%LOCALAPPDATA%\FTPAutoSync\profiles.db`）
+
+### Git ホスト用の一行説明（GitHub「About」など）
+
+次のファイルをそのままコピーして使えます。
+
+- **English:** [`DESCRIPTION.en.txt`](DESCRIPTION.en.txt)
+- **日本語:** [`DESCRIPTION.ja.txt`](DESCRIPTION.ja.txt)
 
 ### 動作環境
 
