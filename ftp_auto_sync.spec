@@ -19,6 +19,8 @@ a = Analysis(
         "profile_store",
         "v2_git_assist",
         "v3_ftp_download",
+        "multi_deploy",
+        "deploy_targets_dialog",
     ],
     hookspath=[],
     hooksconfig={},

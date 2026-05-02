@@ -18,6 +18,8 @@
     "v2_prompt_cooldown_seconds": 90,
     "v3_reverse_local": "",
     "v3_reverse_remote_override": "",
+    "multi_deploy_mode": "off",
+    "deploy_targets": [],
     "backup_remote_previous": true,
     "recursive": true,
     "use_anchor_sync": true,

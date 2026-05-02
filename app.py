@@ -5,6 +5,7 @@ Ver2: アップロード後などに Git／GitHub 確認。Ver3: FTP→ローカ
 """
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import queue
@@ -16,9 +17,11 @@ from tkinter import filedialog, messagebox, ttk
 from typing import Any
 
 from anchor_sync import prepare_anchor_sync_or_legacy
+from deploy_targets_dialog import DeployTargetsDialog
 from ftp_watcher import WatcherService, load_config
+from multi_deploy import MAX_DEPLOY_TARGETS, normalize_deploy_targets
 from v3_ftp_download import run_reverse_sync
-from paths import bundled_example_config, profiles_db_path
+from paths import bundled_example_config, data_dir_env_var_name, profiles_db_path
 from profile_store import MAX_PROFILES, ProfileStore
 from v2_git_assist import (
     ai_git_management_question,
@@ -138,6 +141,7 @@ class FtpAutoSyncApp(tk.Tk):
         self._current_profile_id: int | None = None
         self._profile_list_ids: list[int] = []
         self._v3_busy = False
+        self._deploy_targets: list[dict[str, Any]] = normalize_deploy_targets([])
 
         self._build_profile_panel()
         self._build_form()
@@ -371,6 +375,37 @@ class FtpAutoSyncApp(tk.Tk):
         self.btn_v3.grid(row=vr, column=0, columnspan=2, sticky=tk.W, pady=4)
         v3f.columnconfigure(1, weight=1)
 
+        mdf = ttk.LabelFrame(
+            self,
+            text="マルチデプロイ（指定1〜50・ドメイン置換／複数FTP）",
+            padding=8,
+        )
+        mdf.pack(fill=tk.X, padx=8, pady=4)
+        self.var_multi_deploy_mode = tk.StringVar(value="off")
+        mr = 0
+        ttk.Label(mdf, text="モード").grid(row=mr, column=0, sticky=tk.W)
+        mf = ttk.Frame(mdf)
+        mf.grid(row=mr, column=1, sticky=tk.W)
+        for key, lab in (
+            ("off", "オフ（これまでどおり1系統のアップロード）"),
+            ("additional", "既定FTPにも送る → さらにマルチターゲットへ"),
+            ("targets_only", "マルチターゲットのみ（条件一致時）"),
+        ):
+            ttk.Radiobutton(mf, text=lab, variable=self.var_multi_deploy_mode, value=key).pack(
+                anchor=tk.W
+            )
+        mr += 1
+        ttk.Label(
+            mdf,
+            text=f"ターゲットは最大 {MAX_DEPLOY_TARGETS} 件。各行ダブルクリックで編集。",
+            font=("Segoe UI", 8),
+        ).grid(row=mr, column=1, sticky=tk.W)
+        mr += 1
+        ttk.Button(mdf, text="ターゲット一覧（指定1〜50）を編集…", command=self._edit_deploy_targets).grid(
+            row=mr, column=1, sticky=tk.W, pady=4
+        )
+        mdf.columnconfigure(1, weight=1)
+
     def _build_log(self) -> None:
         lf = ttk.LabelFrame(self, text="ログ", padding=4)
         lf.pack(fill=tk.BOTH, expand=True, padx=8, pady=4)
@@ -387,7 +422,15 @@ class FtpAutoSyncApp(tk.Tk):
         self.btn_start.pack(side=tk.LEFT, padx=4)
         self.btn_stop = ttk.Button(bf, text="監視停止", command=self._stop_watcher, state=tk.DISABLED)
         self.btn_stop.pack(side=tk.LEFT, padx=4)
-        ttk.Label(bf, text=f"DB: {profiles_db_path()}", foreground="gray").pack(side=tk.RIGHT, padx=8)
+        ttk.Label(
+            bf,
+            text=(
+                f"DB: {profiles_db_path()}  （環境変数 {data_dir_env_var_name()} で保存先を変更可・"
+                "docs/GOOGLE_DRIVE_DATA_DIR.md）"
+            ),
+            foreground="gray",
+            wraplength=520,
+        ).pack(side=tk.RIGHT, padx=8)
 
     def _setup_logging(self) -> None:
         root = logging.getLogger()
@@ -675,6 +718,8 @@ class FtpAutoSyncApp(tk.Tk):
                 "v2_prompt_cooldown_seconds": max(5, min(v2cd, 86400)),
                 "v3_reverse_local": self.var_v3_local.get().strip(),
                 "v3_reverse_remote_override": self.var_v3_remote.get().strip(),
+                "multi_deploy_mode": self.var_multi_deploy_mode.get().strip(),
+                "deploy_targets": copy.deepcopy(self._deploy_targets),
             },
             "ai": {
                 "openai_api_key": self.var_openai_key.get().strip(),
@@ -712,6 +757,15 @@ class FtpAutoSyncApp(tk.Tk):
         self.var_v2_cooldown.set(str(sync.get("v2_prompt_cooldown_seconds", 90)))
         self.var_v3_local.set(str(sync.get("v3_reverse_local", "")))
         self.var_v3_remote.set(str(sync.get("v3_reverse_remote_override", "")))
+        self.var_multi_deploy_mode.set(sync.get("multi_deploy_mode", "off"))
+        self._deploy_targets = normalize_deploy_targets(sync.get("deploy_targets"))
+
+    def _edit_deploy_targets(self) -> None:
+        def on_save(data: list[dict[str, Any]]) -> None:
+            self._deploy_targets = normalize_deploy_targets(data)
+            logging.info("マルチデプロイターゲットを更新しました（プロファイル保存で記録されます）。")
+
+        DeployTargetsDialog(self, self._deploy_targets, on_save)
 
     def _bootstrap_load(self) -> None:
         self._refresh_profile_list()

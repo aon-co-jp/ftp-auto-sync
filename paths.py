@@ -5,16 +5,30 @@ import os
 import sys
 from pathlib import Path
 
+# プロファイル DB・アンカー承認などを保存する親フォルダ。
+# 未設定時は %LOCALAPPDATA%\\FTPAutoSync 。
+# Google ドライブ等に共有したい場合は例:
+#   set FTP_AUTOSYNC_DATA_DIR=G:\マイドライブ\FTPAutoSyncData
+# （ドライブ文字や「マイドライブ」名は環境で異なります）
+_ENV_DATA_DIR = "FTP_AUTOSYNC_DATA_DIR"
+
 
 def is_frozen() -> bool:
     return bool(getattr(sys, "frozen", False) and hasattr(sys, "executable"))
 
 
 def app_data_dir() -> Path:
+    override = (os.environ.get(_ENV_DATA_DIR) or "").strip()
+    if override:
+        return Path(override).expanduser().resolve()
     local = os.environ.get("LOCALAPPDATA")
     if local:
         return Path(local) / "FTPAutoSync"
     return Path.home() / ".ftp_auto_sync"
+
+
+def data_dir_env_var_name() -> str:
+    return _ENV_DATA_DIR
 
 
 def user_config_path() -> Path:
