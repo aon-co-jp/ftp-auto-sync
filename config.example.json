@@ -1,0 +1,29 @@
+{
+  "ftp": {
+    "host": "ftp.example.com",
+    "port": 21,
+    "username": "your_user",
+    "password_env": "FTP_PASSWORD",
+    "use_tls": false,
+    "passive": true,
+    "timeout": 60
+  },
+  "sync": {
+    "local_root": "C:/URL/SAMPLE/AI",
+    "remote_root": "public_html",
+    "debounce_seconds": 1.5,
+    "max_sync_directory_depth": -1,
+    "backup_remote_previous": true,
+    "recursive": true,
+    "use_anchor_sync": true,
+    "anchor_folder_name": "auto",
+    "max_anchor_search_depth": 3,
+    "exclude_names": [".git", "__pycache__", ".venv", "node_modules", ".idea"],
+    "exclude_extensions": [".tmp", ".swp", ".lock"]
+  },
+  "ai": {
+    "openai_api_key": "",
+    "openai_base_url": "https://api.openai.com/v1",
+    "openai_model": "gpt-4o-mini"
+  }
+}
