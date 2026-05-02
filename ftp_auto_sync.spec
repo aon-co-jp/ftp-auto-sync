@@ -17,6 +17,8 @@ a = Analysis(
         "paths",
         "ftp_watcher",
         "profile_store",
+        "v2_git_assist",
+        "v3_ftp_download",
     ],
     hookspath=[],
     hooksconfig={},

@@ -25,6 +25,7 @@ Copy from these one-line files:
 - **Approval cache** for mapping; optional **OpenAI-compatible** Chat Completions to phrase the confirm dialog
 - **`max_sync_directory_depth`**: limit how many directory levels are synced (`-1` = no limit)
 - Up to **100,000 profiles** in SQLite under `%LOCALAPPDATA%\FTPAutoSync\profiles.db`
+- **Ver2** (`v2_git_assist.py`): optional Git assist — after upload or path rename, the app can ask (via AI when configured, or fixed templates) whether to use Git for local file/folder name history and optional GitHub sync. The confirmation text is provided in **English, Japanese, Simplified Chinese, Korean, Russian, German, Arabic, and Persian**. If Git is missing, install instructions use the same eight languages.
 
 ### Requirements
 
@@ -92,6 +93,7 @@ Issues and pull requests are welcome.
 - マッピングの **承認をキャッシュ**；任意で **OpenAI 互換 API** により確認文を言い換え
 - **`max_sync_directory_depth`**: 同期するディレクトリの深さ上限（`-1` で無制限）
 - SQLite に **最大 10 万件**のプロファイル（`%LOCALAPPDATA%\FTPAutoSync\profiles.db`）
+- **Ver2**（`v2_git_assist.py`）: アップロード後やパス変更時に、Git でファイル／フォルダ名を記録し、必要なら GitHub 連携の準備としてよいかを確認。**英語・日本語・简体中文・韓国語・ロシア語・ドイツ語・アラビア語・ペルシャ語（فارسی）**の 8 言語ブロックで表示（AI 利用時は API が生成、オフライン時は固定文）。Git 未インストール時も同 8 言語でインストール案内。
 
 ### Git ホスト用の一行説明（GitHub「About」など）
 
