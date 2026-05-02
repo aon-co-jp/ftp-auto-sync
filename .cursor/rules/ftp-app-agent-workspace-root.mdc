@@ -1,0 +1,40 @@
+---
+description: 同上（ワークスペースのルート＝ftp-auto-sync フォルダを開いているとき）
+globs: "**/*"
+alwaysApply: false
+---
+
+# ftp-auto-sync を扱う AI エージェント向け（ルート＝本リポジトリ）
+
+`globs: "**/*"` — ワークスペースに **`ftp-auto-sync` フォルダだけ**を開いているとき用。  
+親フォルダを開いている場合は **`ftp-app-agent.mdc`（`ftp-auto-sync/**/*`）** を使う（`docs/CURSOR_RULE_WORKSPACE.md`）。
+
+## 位置づけ
+
+- アプリは **ローカル監視 → FTP アップロード** が主。設定は **SQLite プロファイル**（GUI）または **JSON**（CLI）。
+- AI は **FTP 資格情報を生成・推測しない**。ユーザーが設定済みの前提で、**手順・設定項目・コマンド**のみ案内する。
+
+## 起動パターン
+
+- **GUI**: プロジェクトルートで `python app.py`。プロファイル DB の既定は `%LOCALAPPDATA%\FTPAutoSync\profiles.db`。環境変数 **`FTP_AUTOSYNC_DATA_DIR`** で Google ドライブ上のフォルダなどに変更可（`docs/GOOGLE_DRIVE_DATA_DIR.md`）。
+- **CLI**: `python ftp_watcher.py -c <設定JSONパス>`。設定は `config.example.json` をコピーして編集する形が安全。
+
+## 設定の真実の源泉
+
+- キー一覧・既定値の参照は **`config.example.json`** を正とする。
+- マルチデプロイ・Ver2・Ver3 の意味を説明するときは、コードよりまず **README / 上記 example** を優先。
+
+## 自動化の境界
+
+- **GUI のクリック操作を AI がリモートから実行することはできない**と明示する。
+- 「Cursor が自動で FTP する」ではなく、**ユーザーがコマンドを実行する**か **CLI + JSON** での運用を提案する。
+- パスワードは **環境変数**（例: `FTP_PASSWORD`）や GUI のプロファイル保存を推奨し、平文をチャットに貼らないよう警告する。
+
+## ユーザー向け指示フォーム
+
+詳細な記入テンプレは **`docs/CURSOR_AI_OPERATOR_FORM.md`**。カスタム指示の起草に使う。
+
+## 禁止・慎重領域
+
+- 本番と思われる FTP への **無確認での接続テスト手順だけ**を書くことは避け、**確認ダイアログ・バックアップ**（アプリのリモート退避オプション）に触れる。
+- マルチデプロイの置換ルールは **誤置換でサイトが壊れる**ため、テスト用ディレクトリとバックアップを勧める。

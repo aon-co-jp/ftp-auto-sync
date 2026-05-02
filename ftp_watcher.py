@@ -246,18 +246,26 @@ class DebouncedUploader:
 
     def _do_upload(self, local_path: Path) -> None:
         with self._upload_lock:
+            mode = (self._sync_cfg.get("multi_deploy_mode") or "off").strip().lower()
             try:
-                with ftp_connection(self._ftp_cfg) as ftp:
-                    backup = bool(self._sync_cfg.get("backup_remote_previous", True))
-                    ok = upload_file(
-                        ftp,
-                        local_path,
+                if mode in ("additional", "targets_only"):
+                    from multi_deploy import run_multi_deploy_uploads
+
+                    ok_count, _attempts, errs = run_multi_deploy_uploads(
+                        self._ftp_cfg,
+                        self._sync_cfg,
                         self._local_root,
                         self._sync_mapping,
-                        backup_remote_previous=backup,
+                        local_path,
+                        backup_remote_previous=bool(
+                            self._sync_cfg.get("backup_remote_previous", True)
+                        ),
+                        mode=mode,
                     )
+                    for msg in errs[:20]:
+                        LOG.warning("%s", msg)
                     if (
-                        ok
+                        ok_count > 0
                         and self._v2_event_queue is not None
                         and self._sync_cfg.get("v2_git_ai_prompt")
                     ):
@@ -267,6 +275,27 @@ class DebouncedUploader:
                             )
                         except Exception:
                             pass
+                else:
+                    with ftp_connection(self._ftp_cfg) as ftp:
+                        backup = bool(self._sync_cfg.get("backup_remote_previous", True))
+                        ok = upload_file(
+                            ftp,
+                            local_path,
+                            self._local_root,
+                            self._sync_mapping,
+                            backup_remote_previous=backup,
+                        )
+                        if (
+                            ok
+                            and self._v2_event_queue is not None
+                            and self._sync_cfg.get("v2_git_ai_prompt")
+                        ):
+                            try:
+                                self._v2_event_queue.put_nowait(
+                                    {"kind": "upload", "path": str(local_path.resolve())}
+                                )
+                            except Exception:
+                                pass
             except Exception:
                 LOG.exception("アップロード失敗: %s", local_path)
 
