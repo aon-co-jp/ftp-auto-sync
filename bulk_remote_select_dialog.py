@@ -42,7 +42,7 @@ def show_bulk_remote_folder_dialog(
     remote_root = (sync.get("remote_root") or "").strip().replace("\\", "/").strip("/")
     remote_segs = [s for s in remote_root.split("/") if s] if remote_root else []
     try:
-        max_depth = int(sync.get("max_anchor_search_depth", 3))
+        max_depth = int(sync.get("max_anchor_search_depth", 6))
     except (TypeError, ValueError):
         max_depth = 3
     max_depth = max(0, min(max_depth, 128))

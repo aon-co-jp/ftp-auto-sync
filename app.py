@@ -1,5 +1,5 @@
 """
-Ftp-Auto-Sync — Windows 向け GUI（tkinter）。Ver 4.8
+Ftp-Auto-Sync — Windows 向け GUI（tkinter）。Ver 5.0
 プロファイルは SQLite（最大 100,000 件）に保存: %LOCALAPPDATA%\\FTPAutoSync\\profiles.db
 Ver2: アップロード後などに Git／GitHub 確認。Ver3: FTP→ローカル一括ダウンロード（逆同期）。
 """
@@ -615,7 +615,7 @@ class FtpAutoSyncApp(tk.Tk):
         lad = ttk.Label(af, text=ui_i18n.t(self.var_ui_lang.get(), "lbl_skew_levels"))
         self._reg_i18n(lad, "text", "lbl_skew_levels")
         lad.grid(row=ar, column=2, sticky=tk.E, padx=(12, 4), pady=2)
-        self.var_anchor_depth = tk.StringVar(value="3")
+        self.var_anchor_depth = tk.StringVar(value="6")
         ttk.Entry(af, textvariable=self.var_anchor_depth, width=4).grid(row=ar, column=3, sticky=tk.W, pady=2)
         ar += 1
         self.lbl_skew_hint = ttk.Label(
@@ -1246,9 +1246,9 @@ class FtpAutoSyncApp(tk.Tk):
         except ValueError:
             deb = 1.5
         try:
-            ad = int(self.var_anchor_depth.get().strip() or "3")
+            ad = int(self.var_anchor_depth.get().strip() or "6")
         except ValueError:
-            ad = 3
+            ad = 6
         try:
             msd = int(self.var_max_sync_depth.get().strip() or "-1")
         except ValueError:
@@ -1340,7 +1340,7 @@ class FtpAutoSyncApp(tk.Tk):
         self.var_use_anchor.set(bool(sync.get("use_anchor_sync", True)))
         self.var_anchor_auto.set(bool(sync.get("anchor_auto_match", True)))
         self.var_anchor.set(str(sync.get("anchor_folder_name", "")))
-        self.var_anchor_depth.set(str(sync.get("max_anchor_search_depth", 3)))
+        self.var_anchor_depth.set(str(sync.get("max_anchor_search_depth", 6)))
         self.var_openai_key.set(str(ai.get("openai_api_key", "")))
         self.var_openai_base.set(str(ai.get("openai_base_url", "https://api.openai.com/v1")))
         self.var_openai_model.set(str(ai.get("openai_model", "gpt-4o-mini")))

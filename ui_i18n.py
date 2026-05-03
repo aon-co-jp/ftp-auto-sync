@@ -1,8 +1,8 @@
-"""Ftp-Auto-Sync GUI 文言（Ver 4.8）。キーは英語スラッグ。"""
+"""Ftp-Auto-Sync GUI 文言（Ver 5.0）。キーは英語スラッグ。"""
 from __future__ import annotations
 
 APP_PRODUCT = "Ftp-Auto-Sync"
-APP_VERSION = "4.8.0"
+APP_VERSION = "5.0.0"
 
 LANG_CODES = (
     "ja",
@@ -84,7 +84,7 @@ _EN: dict[str, str] = {
         "How many levels of offset to correct?"
     ),
     "lbl_skew_levels": "Levels to correct",
-    "lbl_skew_hint": "(default 3; applies to server search depth above)",
+    "lbl_skew_hint": "(default 6; applies to server search depth above)",
     "lbl_openai_key": "OpenAI API key (optional)",
     "lbl_openai_base": "API base URL",
     "lbl_openai_model": "Model name",
@@ -191,8 +191,8 @@ _JA: dict[str, str] = {
     "lbl_anchor_name": "アンカー名（手動モード時のみ）",
     "lbl_anchor_depth": "サーバー探索の深さ(階層)",
     "anchor_skew_intro": (
-        "現在、デフォルトで3階層までのずれは、自動で誤差の修正を行なって同期をとります。\n"
-        "何階層までのずれを修正しますか？（下の数値。既定3・変更可）"
+        "現在、デフォルトで6階層までのずれは、自動で誤差の修正を行なって同期をとります。\n"
+        "何階層までのずれを修正しますか？（下の数値。既定6・変更可）"
     ),
     "lbl_skew_levels": "ずれ修正する階層数",
     "lbl_skew_hint": "（この数値がサーバー側フォルダ探索の最大深さになります）",
