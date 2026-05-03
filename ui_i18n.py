@@ -1,8 +1,8 @@
-"""Ftp-Auto-Sync GUI 文言（Ver 4.7）。キーは英語スラッグ。"""
+"""Ftp-Auto-Sync GUI 文言（Ver 4.8）。キーは英語スラッグ。"""
 from __future__ import annotations
 
 APP_PRODUCT = "Ftp-Auto-Sync"
-APP_VERSION = "4.7.0"
+APP_VERSION = "4.8.0"
 
 LANG_CODES = (
     "ja",
@@ -329,12 +329,12 @@ def ftp_login_success_bilingual_body(*, saved_auth_key: bool) -> str:
     ]
     if saved_auth_key:
         lines += [
-            "→ 認証キーをプロファイルに保存しました。",
-            "→ Auth key saved to the profile.",
+            "→ FTP 設定（認証キー・ホスト等）をプロファイルに保存しました。",
+            "→ FTP settings (host, auth key, etc.) were saved to the profile.",
         ]
     else:
         lines += [
-            "→ 認証キーの自動保存は行いませんでした（未入力・環境変数にも無い、既に同一、またはプロファイル未選択）。",
-            "→ Auth key was not auto-saved (empty, not in env, already matched, or no profile selected).",
+            "→ FTP 設定の自動保存を行えませんでした（プロファイル未選択または保存に失敗）。",
+            "→ FTP settings were not auto-saved (no profile selected or save failed).",
         ]
     return "\n".join(lines)
