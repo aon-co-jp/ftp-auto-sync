@@ -27,7 +27,7 @@
     "use_anchor_sync": true,
     "anchor_auto_match": true,
     "anchor_folder_name": "",
-    "max_anchor_search_depth": 3,
+    "max_anchor_search_depth": 6,
     "only_upload_if_local_newer": true,
     "sync_default_domain_scope": false,
     "sync_skip_under_app_datadir": true,

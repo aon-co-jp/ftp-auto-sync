@@ -445,7 +445,7 @@ def prepare_anchor_sync_or_legacy(
     if not use_anchor:
         return {"type": "legacy", "remote_root": remote_root}
 
-    max_depth = int(sync.get("max_anchor_search_depth", 3))
+    max_depth = int(sync.get("max_anchor_search_depth", 6))
     max_depth = max(0, min(max_depth, 128))
     anchor_auto_match = bool(sync.get("anchor_auto_match", True))
     anchor = (sync.get("anchor_folder_name") or "").strip()
@@ -551,7 +551,7 @@ def pick_anchor_auto(
     except ValueError:
         return None
     parts = rel.parts
-    if len(parts) < 2:
+    if not parts:
         return None
     fname = parts[-1]
     dir_parts = list(parts[:-1])
@@ -571,7 +571,8 @@ def pick_anchor_auto(
         chosen = choose_shortest_candidate(candidates)
         full_dir = rr_segs + chosen + tail
         return full_dir, fname, tail
-    return None
+    # フォルダ名が一致しない／ローカルが浅い場合は、remote_root + ローカル相対パスで素直にアップロード。
+    return rr_segs + dir_parts, fname, dir_parts
 
 
 def upload_path_parts_for_file(
