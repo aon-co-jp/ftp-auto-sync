@@ -1,5 +1,5 @@
 """
-Ftp-Auto-Sync — Windows 向け GUI（tkinter）。Ver 4.1
+Ftp-Auto-Sync — Windows 向け GUI（tkinter）。Ver 4.5
 プロファイルは SQLite（最大 100,000 件）に保存: %LOCALAPPDATA%\\FTPAutoSync\\profiles.db
 Ver2: アップロード後などに Git／GitHub 確認。Ver3: FTP→ローカル一括ダウンロード（逆同期）。
 """
@@ -160,6 +160,7 @@ class FtpAutoSyncApp(tk.Tk):
         self._apply_ui_language()
         self.after(150, self._drain_log_queue)
         self.after(260, self._poll_v2_queue)
+        self.after(400, self._sync_anchor_labels_wraplength)
 
     def _app_title(self) -> str:
         return ui_i18n.t(self.var_ui_lang.get(), "app_title")
@@ -196,7 +197,24 @@ class FtpAutoSyncApp(tk.Tk):
             )
         except tk.TclError:
             pass
+        self._sync_anchor_labels_wraplength()
         self._update_sync_status_label()
+
+    def _sync_anchor_labels_wraplength(self) -> None:
+        """wraplength がウィンドウより大きいと折り返されず下段が隠れるため、フレーム幅に合わせる。"""
+        try:
+            af = self._lf_anchor
+            w = max(220, int(af.winfo_width()) - 32)
+        except (tk.TclError, AttributeError):
+            return
+        try:
+            self.lbl_anchor_skew_intro.configure(wraplength=w)
+        except tk.TclError:
+            pass
+        try:
+            self.lbl_skew_hint.configure(wraplength=w)
+        except tk.TclError:
+            pass
 
     def _update_sync_status_label(self) -> None:
         lang = self.var_ui_lang.get()
@@ -220,6 +238,9 @@ class FtpAutoSyncApp(tk.Tk):
     def _build_language_bar(self) -> None:
         bar = ttk.Frame(self)
         bar.pack(fill=tk.X, padx=8, pady=(4, 0))
+        bar.columnconfigure(1, weight=1)
+        bar_left = ttk.Frame(bar)
+        bar_left.grid(row=0, column=0, sticky=tk.W)
         self.var_sync_status = tk.StringVar(
             value=ui_i18n.t(self.var_ui_lang.get(), "status_idle")
         )
@@ -229,12 +250,12 @@ class FtpAutoSyncApp(tk.Tk):
             font=("Segoe UI", 10),
             foreground="#546e7a",
         )
-        self.lbl_sync_status.pack(side=tk.RIGHT, padx=(12, 4))
+        self.lbl_sync_status.grid(row=0, column=2, sticky=tk.E, padx=(8, 4))
         self._lbl_lang_select = ttk.Label(
-            bar, text=ui_i18n.t(self.var_ui_lang.get(), "lang_select")
+            bar_left, text=ui_i18n.t(self.var_ui_lang.get(), "lang_select")
         )
         self._lbl_lang_select.pack(side=tk.LEFT)
-        rf = ttk.Frame(bar)
+        rf = ttk.Frame(bar_left)
         rf.pack(side=tk.LEFT, padx=(8, 0))
         for code in ui_i18n.LANG_CODES:
             ttk.Radiobutton(
@@ -525,11 +546,13 @@ class FtpAutoSyncApp(tk.Tk):
         self.lbl_anchor_skew_intro = ttk.Label(
             af,
             text=ui_i18n.t(self.var_ui_lang.get(), "anchor_skew_intro"),
-            wraplength=880,
+            wraplength=640,
             justify=tk.LEFT,
         )
         self._reg_i18n(self.lbl_anchor_skew_intro, "text", "anchor_skew_intro")
-        self.lbl_anchor_skew_intro.grid(row=ar, column=0, columnspan=4, sticky=tk.W, pady=(4, 2))
+        self.lbl_anchor_skew_intro.grid(
+            row=ar, column=0, columnspan=4, sticky=(tk.W, tk.E), pady=(4, 2)
+        )
         ar += 1
         lan = ttk.Label(af, text=ui_i18n.t(self.var_ui_lang.get(), "lbl_anchor_name"))
         self._reg_i18n(lan, "text", "lbl_anchor_name")
@@ -546,10 +569,23 @@ class FtpAutoSyncApp(tk.Tk):
             af,
             text=ui_i18n.t(self.var_ui_lang.get(), "lbl_skew_hint"),
             font=("Segoe UI", 8),
+            wraplength=640,
+            justify=tk.LEFT,
         )
         self._reg_i18n(self.lbl_skew_hint, "text", "lbl_skew_hint")
-        self.lbl_skew_hint.grid(row=ar, column=1, columnspan=3, sticky=tk.W)
+        self.lbl_skew_hint.grid(
+            row=ar, column=0, columnspan=4, sticky=(tk.W, tk.E), pady=(0, 2)
+        )
         ar += 1
+
+        def _on_anchor_frame_configure(e: tk.Event, _af: ttk.LabelFrame = af) -> None:
+            if e.widget is not _af or int(e.width) < 80:
+                return
+            self.after_idle(self._sync_anchor_labels_wraplength)
+
+        af.bind("<Configure>", _on_anchor_frame_configure, add="+")
+        for c in range(4):
+            af.columnconfigure(c, weight=1)
         lo = ttk.Label(af, text=ui_i18n.t(self.var_ui_lang.get(), "lbl_openai_key"))
         self._reg_i18n(lo, "text", "lbl_openai_key")
         lo.grid(row=ar, column=0, sticky=tk.W, pady=2)
@@ -571,7 +607,6 @@ class FtpAutoSyncApp(tk.Tk):
         lom.grid(row=ar, column=0, sticky=tk.W, pady=2)
         self.var_openai_model = tk.StringVar(value="gpt-4o-mini")
         ttk.Entry(af, textvariable=self.var_openai_model, width=24).grid(row=ar, column=1, sticky=tk.W, pady=2)
-        af.columnconfigure(1, weight=1)
         frm.columnconfigure(1, weight=1)
 
         self._build_delta_ai_panel()
@@ -1645,7 +1680,12 @@ class FtpAutoSyncApp(tk.Tk):
         self.btn_start.configure(state=tk.DISABLED)
         self.btn_stop.configure(state=tk.NORMAL)
         self._update_sync_status_label()
-        self._show_ftp_login_success_auth_key_dialog()
+        try:
+            self.update_idletasks()
+            self.update()
+        except tk.TclError:
+            pass
+        self.after(1, self._show_ftp_login_success_auth_key_dialog)
         logging.info("監視を開始しました。")
 
     def _save_config_silent(self) -> None:

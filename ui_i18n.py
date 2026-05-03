@@ -1,8 +1,8 @@
-"""Ftp-Auto-Sync GUI 文言（Ver 4.1）。キーは英語スラッグ。"""
+"""Ftp-Auto-Sync GUI 文言（Ver 4.5）。キーは英語スラッグ。"""
 from __future__ import annotations
 
 APP_PRODUCT = "Ftp-Auto-Sync"
-APP_VERSION = "4.1.0"
+APP_VERSION = "4.5.0"
 
 LANG_CODES = (
     "ja",
@@ -205,7 +205,7 @@ _JA: dict[str, str] = {
     "lbl_anchor_name": "アンカー名（手動モード時のみ）",
     "lbl_anchor_depth": "サーバー探索の深さ(階層)",
     "anchor_skew_intro": (
-        "現在、デフォルトで3階層までのずれは、自動で誤差の修正を行なって同期をとります。"
+        "現在、デフォルトで3階層までのずれは、自動で誤差の修正を行なって同期をとります。\n"
         "何階層までのずれを修正しますか？（下の数値。既定3・変更可）"
     ),
     "lbl_skew_levels": "ずれ修正する階層数",
