@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import logging
@@ -21,6 +22,30 @@ from ftp_util import ftp_connection
 LOG = logging.getLogger(__name__)
 
 ApprovalFn = Callable[[str, str], bool]
+
+
+def remote_index_lookup_keys_for_local_segment(
+    seg: str, mapping: dict[str, Any]
+) -> list[str]:
+    """
+    リモート索引を引くキー一覧。ローカル側フォルダ名 seg に対し、
+    △対応（delta_folder_mappings）で別名のサーバーフォルダ名も列挙する。
+    """
+    s0 = seg.strip().lower()
+    keys: list[str] = [s0]
+    seen = {s0}
+    for dm in mapping.get("delta_folder_mappings") or []:
+        if not isinstance(dm, dict):
+            continue
+        loc = str(dm.get("local_segment") or "").strip().lower()
+        if loc != s0:
+            continue
+        for name in dm.get("remote_folder_names") or []:
+            t = str(name).strip().lower()
+            if t and t not in seen:
+                seen.add(t)
+                keys.append(t)
+    return keys
 
 
 def _approval_path() -> Path:
@@ -424,6 +449,9 @@ def prepare_anchor_sync_or_legacy(
     max_depth = max(0, min(max_depth, 128))
     anchor_auto_match = bool(sync.get("anchor_auto_match", True))
     anchor = (sync.get("anchor_folder_name") or "").strip()
+    ai_anchor = bool(sync.get("ai_anchor_sync", False))
+    if ai_anchor:
+        anchor_auto_match = True
 
     if anchor_auto_match:
         with ftp_connection(ftp_cfg) as ftp:
@@ -443,6 +471,8 @@ def prepare_anchor_sync_or_legacy(
                 "remote_root_segments": remote_segs,
                 "remote_folder_index": index,
                 "max_anchor_search_depth": max_depth,
+                "ai_anchor_sync": ai_anchor,
+                "delta_folder_mappings": copy.deepcopy(sync.get("delta_folder_mappings") or []),
             }
         summary = build_auto_mapping_summary_text(
             local_root, remote_root, max_depth, len(all_paths), index
@@ -457,6 +487,8 @@ def prepare_anchor_sync_or_legacy(
             "remote_root_segments": remote_segs,
             "remote_folder_index": index,
             "max_anchor_search_depth": max_depth,
+            "ai_anchor_sync": ai_anchor,
+            "delta_folder_mappings": copy.deepcopy(sync.get("delta_folder_mappings") or []),
         }
 
     if not anchor:
@@ -524,10 +556,16 @@ def pick_anchor_auto(
     fname = parts[-1]
     dir_parts = list(parts[:-1])
     rr_segs = list(mapping.get("remote_root_segments") or [])
+    ai_anchor = bool(mapping.get("ai_anchor_sync"))
     for j in range(len(dir_parts) - 1, -1, -1):
         seg = dir_parts[j]
+        if ai_anchor and "." in seg:
+            continue
         tail = dir_parts[j + 1 :]
-        candidates = idx.get(seg.lower(), [])
+        candidates: list[list[str]] = []
+        for rk in remote_index_lookup_keys_for_local_segment(seg, mapping):
+            for c in idx.get(rk, []) or []:
+                candidates.append(list(c))
         if not candidates:
             continue
         chosen = choose_shortest_candidate(candidates)
