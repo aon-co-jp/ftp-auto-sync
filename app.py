@@ -1,5 +1,5 @@
 """
-Ftp-Auto-Sync — Windows 向け GUI（tkinter）。Ver 4.5
+Ftp-Auto-Sync — Windows 向け GUI（tkinter）。Ver 4.7
 プロファイルは SQLite（最大 100,000 件）に保存: %LOCALAPPDATA%\\FTPAutoSync\\profiles.db
 Ver2: アップロード後などに Git／GitHub 確認。Ver3: FTP→ローカル一括ダウンロード（逆同期）。
 """
@@ -20,7 +20,7 @@ from typing import Any
 
 import ui_i18n
 from anchor_sync import prepare_anchor_sync_or_legacy
-from ftp_util import test_ftp_login
+from ftp_util import resolve_ftp_auth_key, test_ftp_login
 from bulk_remote_select_dialog import show_bulk_remote_folder_dialog
 from deploy_targets_dialog import DeployTargetsDialog
 from ftp_watcher import WatcherService, load_config
@@ -1743,11 +1743,47 @@ class FtpAutoSyncApp(tk.Tk):
         else:
             messagebox.showerror(self._app_title(), msg)
 
+    def _autosave_ftp_auth_key_to_profile_if_possible(self) -> bool:
+        """認証キー（入力欄または環境変数）を、選択中プロファイルへ可能なら書き込む。"""
+        pid = self._current_profile_id
+        if pid is None:
+            return False
+        row = self._store.get(pid)
+        if not row:
+            return False
+        name_stored, cfg = row
+        cfg = copy.deepcopy(cfg)
+        ftp_u = self._config_from_ui().get("ftp") or {}
+        ftp = dict(cfg.get("ftp") or {})
+        ak_ui = (self.var_ftp_auth_key.get() or "").strip()
+        resolved = resolve_ftp_auth_key(ftp_u)
+        want = ak_ui if ak_ui else (resolved or "").strip()
+        if not want:
+            return False
+        have = (ftp.get("auth_key") or "").strip()
+        env_nm = (ftp_u.get("auth_key_env") or "FTP_AUTH_KEY").strip() or "FTP_AUTH_KEY"
+        cur_env = (ftp.get("auth_key_env") or "FTP_AUTH_KEY").strip() or "FTP_AUTH_KEY"
+        if want == have and env_nm == cur_env:
+            return False
+        ftp["auth_key"] = want
+        ftp["auth_key_env"] = env_nm
+        cfg["ftp"] = ftp
+        name = self.var_profile_name.get().strip() or name_stored or "無題"
+        try:
+            self._store.update(pid, name, cfg)
+            if not ak_ui and resolved:
+                self.var_ftp_auth_key.set(resolved)
+            logging.info("認証キーをプロファイル id=%s に自動保存しました。", pid)
+            return True
+        except Exception as e:
+            logging.warning("認証キーの自動保存に失敗: %s", e)
+            return False
+
     def _show_ftp_login_success_auth_key_dialog(self) -> None:
-        lang = self.var_ui_lang.get()
+        saved = self._autosave_ftp_auth_key_to_profile_if_possible()
         messagebox.showinfo(
-            ui_i18n.t(lang, "ftp_auth_confirm_title"),
-            ui_i18n.t(lang, "ftp_login_ok_with_auth_hint"),
+            ui_i18n.ftp_login_success_dialog_title(),
+            ui_i18n.ftp_login_success_bilingual_body(saved_auth_key=saved),
             parent=self,
         )
 
