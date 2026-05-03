@@ -1,8 +1,8 @@
-"""Ftp-Auto-Sync GUI 文言（Ver 4.0）。キーは英語スラッグ。"""
+"""Ftp-Auto-Sync GUI 文言（Ver 4.1）。キーは英語スラッグ。"""
 from __future__ import annotations
 
 APP_PRODUCT = "Ftp-Auto-Sync"
-APP_VERSION = "4.0.0"
+APP_VERSION = "4.1.0"
 
 LANG_CODES = (
     "ja",
@@ -42,7 +42,13 @@ _EN: dict[str, str] = {
     "status_syncing": "Syncing…",
     "lbl_ftp_auth_key": "Auth key (ACCT / second password, optional)",
     "btn_ftp_test": "Test FTP login",
-    "ftp_test_ok": "FTP login succeeded.",
+    "ftp_auth_confirm_title": "Auth key (ACCT) reminder",
+    "ftp_login_ok_with_auth_hint": (
+        "FTP login succeeded.\n\n"
+        "If your host requires a second login step (FTP ACCT), enter it in \"Auth key\" "
+        "and click \"Save to profile\" before starting sync. "
+        "You can also set the environment variable named in auth_key_env (default FTP_AUTH_KEY)."
+    ),
     "btn_rename_profile": "Rename profile",
     "profile_renamed_ok": "Profile display name was updated.",
     "profile_rename_need_select": "Select a profile in the list first.",
@@ -154,7 +160,13 @@ _JA: dict[str, str] = {
     "status_syncing": "同期中です。",
     "lbl_ftp_auth_key": "認証キー（ACCT／第二パスワード・任意）",
     "btn_ftp_test": "FTP 接続テスト",
-    "ftp_test_ok": "FTP ログインに成功しました。",
+    "ftp_auth_confirm_title": "認証キー（ACCT）の確認",
+    "ftp_login_ok_with_auth_hint": (
+        "FTP への接続とログインに成功しました。\n\n"
+        "ホストが第二認証（FTP の ACCT）を求める場合は、下の「認証キー」欄に入力し、"
+        "「プロファイルに保存」してから同期開始してください。"
+        "環境変数（既定では FTP_AUTH_KEY）で渡すこともできます。"
+    ),
     "btn_rename_profile": "プロファイル名変更",
     "profile_renamed_ok": "プロファイル表示名を更新しました。",
     "profile_rename_need_select": "リストで名前を変更するプロファイルを選択してください。",

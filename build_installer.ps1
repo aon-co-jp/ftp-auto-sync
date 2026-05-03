@@ -1,6 +1,6 @@
 # EXE (PyInstaller) → Inno Setup インストーラーまで一括ビルド
 # 前提: Inno Setup 6 https://jrsoftware.org/isdl.php
-# 出力: release\Ftp-Auto-Sync_Setup_4.0.0.exe 等（バージョンは installer\FTPAutoSync.iss の #define に準拠）
+# 出力: release\Ftp-Auto-Sync_Setup_4.1.0.exe 等（バージョンは installer\FTPAutoSync.iss の #define に準拠）
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 

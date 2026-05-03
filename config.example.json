@@ -29,7 +29,7 @@
     "anchor_folder_name": "",
     "max_anchor_search_depth": 3,
     "only_upload_if_local_newer": true,
-    "sync_default_domain_scope": true,
+    "sync_default_domain_scope": false,
     "sync_skip_under_app_datadir": true,
     "sync_star_exclude_rel_roots": [],
     "sync_mark_include_rel_roots": [],

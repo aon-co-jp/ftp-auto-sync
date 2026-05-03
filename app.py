@@ -1,5 +1,5 @@
 """
-Ftp-Auto-Sync — Windows 向け GUI（tkinter）。Ver 4.0
+Ftp-Auto-Sync — Windows 向け GUI（tkinter）。Ver 4.1
 プロファイルは SQLite（最大 100,000 件）に保存: %LOCALAPPDATA%\\FTPAutoSync\\profiles.db
 Ver2: アップロード後などに Git／GitHub 確認。Ver3: FTP→ローカル一括ダウンロード（逆同期）。
 """
@@ -211,6 +211,10 @@ class FtpAutoSyncApp(tk.Tk):
                 foreground=("#1565c0" if watching else "#546e7a")
             )
         except (tk.TclError, AttributeError):
+            pass
+        try:
+            self.update_idletasks()
+        except tk.TclError:
             pass
 
     def _build_language_bar(self) -> None:
@@ -739,7 +743,7 @@ class FtpAutoSyncApp(tk.Tk):
         )
         self._reg_i18n(si, "text", "sync_scope_intro")
         si.grid(row=0, column=0, columnspan=2, sticky=tk.W, pady=(0, 6))
-        self.var_sync_domain_scope = tk.BooleanVar(value=True)
+        self.var_sync_domain_scope = tk.BooleanVar(value=False)
         self.chk_sync_domain_scope = ttk.Checkbutton(
             scf,
             text=ui_i18n.t(self.var_ui_lang.get(), "chk_sync_domain_scope"),
@@ -1262,7 +1266,7 @@ class FtpAutoSyncApp(tk.Tk):
         self.var_only_newer.set(bool(sync.get("only_upload_if_local_newer", True)))
         self.var_ai_anchor.set(bool(sync.get("ai_anchor_sync", False)))
         self.var_bulk_on_start.set(bool(sync.get("bulk_deploy_confirm_on_start", False)))
-        self.var_sync_domain_scope.set(bool(sync.get("sync_default_domain_scope", True)))
+        self.var_sync_domain_scope.set(bool(sync.get("sync_default_domain_scope", False)))
         self.var_sync_skip_appdata.set(bool(sync.get("sync_skip_under_app_datadir", True)))
         self.txt_sync_star.delete("1.0", tk.END)
         self.txt_sync_star.insert(
@@ -1641,6 +1645,7 @@ class FtpAutoSyncApp(tk.Tk):
         self.btn_start.configure(state=tk.DISABLED)
         self.btn_stop.configure(state=tk.NORMAL)
         self._update_sync_status_label()
+        self._show_ftp_login_success_auth_key_dialog()
         logging.info("監視を開始しました。")
 
     def _save_config_silent(self) -> None:
@@ -1694,12 +1699,17 @@ class FtpAutoSyncApp(tk.Tk):
 
     def _ftp_test_done(self, ok: bool, msg: str) -> None:
         if ok:
-            messagebox.showinfo(
-                self._app_title(),
-                ui_i18n.t(self.var_ui_lang.get(), "ftp_test_ok"),
-            )
+            self._show_ftp_login_success_auth_key_dialog()
         else:
             messagebox.showerror(self._app_title(), msg)
+
+    def _show_ftp_login_success_auth_key_dialog(self) -> None:
+        lang = self.var_ui_lang.get()
+        messagebox.showinfo(
+            ui_i18n.t(lang, "ftp_auth_confirm_title"),
+            ui_i18n.t(lang, "ftp_login_ok_with_auth_hint"),
+            parent=self,
+        )
 
     def _rename_profile_display_name(self) -> None:
         if self._current_profile_id is None:
