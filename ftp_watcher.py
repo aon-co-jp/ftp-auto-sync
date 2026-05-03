@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+from io import BytesIO
 from queue import Queue
 import sys
 import threading
@@ -18,9 +19,12 @@ from ftplib import FTP, error_perm
 from pathlib import Path
 from typing import Any
 
+from ai_upload_rewrite import maybe_ai_rewrite_bytes
 from anchor_sync import pick_anchor_auto, split_local_at_anchor, upload_path_parts_for_file
 from dotenv import load_dotenv
+from ftp_mtime import should_upload_local_newer
 from ftp_util import ftp_connection
+from sync_scope import should_skip_sync_scope
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
@@ -30,6 +34,20 @@ LOG = logging.getLogger("ftp_watcher")
 def load_config(path: Path) -> dict[str, Any]:
     with path.open(encoding="utf-8") as f:
         return json.load(f)
+
+
+def apply_sync_defaults(sync_cfg: dict[str, Any]) -> None:
+    """V3.5 既定: サーバー上のファイルよりローカルが新しいときだけ自動アップロード。"""
+    sync_cfg.setdefault("only_upload_if_local_newer", True)
+    sync_cfg.setdefault("sync_default_domain_scope", True)
+    sync_cfg.setdefault("sync_skip_under_app_datadir", True)
+    sync_cfg.setdefault("sync_star_exclude_rel_roots", [])
+    sync_cfg.setdefault("sync_mark_include_rel_roots", [])
+    sync_cfg.setdefault("delta_folder_mappings", [])
+    sync_cfg.setdefault("ai_rewrite_on_upload", False)
+    sync_cfg.setdefault("ai_rewrite_instruction", "")
+    sync_cfg.setdefault("ai_rewrite_extensions", "")
+    sync_cfg.setdefault("ai_rewrite_launch_cursor", False)
 
 
 def max_sync_directory_depth_limit(sync_cfg: dict[str, Any]) -> int | None:
@@ -87,6 +105,8 @@ def should_skip(
         if upload_path_parts_for_file(path, local_root, sync_mapping) is None:
             return True
     if _depth_exceeds_sync_limit(path, local_root, cfg, sync_mapping):
+        return True
+    if should_skip_sync_scope(path, local_root, cfg):
         return True
     try:
         rel = path.relative_to(local_root)
@@ -161,6 +181,8 @@ def upload_file(
     local_root: Path,
     sync_mapping: dict[str, Any],
     backup_remote_previous: bool = True,
+    sync_cfg: dict[str, Any] | None = None,
+    ai_cfg: dict[str, Any] | None = None,
 ) -> bool:
     parts = upload_path_parts_for_file(local_path, local_root, sync_mapping)
     if parts is None:
@@ -171,6 +193,9 @@ def upload_file(
     start = ftp.pwd()
     try:
         _cwd_create_chain(ftp, dir_parts)
+        sc = sync_cfg or {}
+        if not should_upload_local_newer(ftp, filename, local_path, sc):
+            return False
         if backup_remote_previous:
             try:
                 _archive_remote_previous_version(ftp, filename)
@@ -188,8 +213,23 @@ def upload_file(
             ftp.pwd(),
             filename,
         )
-        with local_path.open("rb") as fh:
-            ftp.storbinary(f"STOR {filename}", fh, blocksize=65536)
+        raw = local_path.read_bytes()
+        try:
+            rel_u = local_path.resolve().relative_to(local_root.resolve()).as_posix()
+        except ValueError:
+            rel_u = local_path.name
+        if sync_cfg is not None and ai_cfg is not None:
+            raw = maybe_ai_rewrite_bytes(
+                raw,
+                filename,
+                rel_u,
+                sync_cfg,
+                ai_cfg,
+                deploy_context=None,
+                source_path=local_path,
+            )
+        bio = BytesIO(raw)
+        ftp.storbinary(f"STOR {filename}", bio, blocksize=65536)
     finally:
         try:
             ftp.cwd(start)
@@ -206,12 +246,14 @@ class DebouncedUploader:
         local_root: Path,
         sync_mapping: dict[str, Any],
         v2_event_queue: Queue | None = None,
+        ai_cfg: dict[str, Any] | None = None,
     ) -> None:
         self._ftp_cfg = ftp_cfg
         self._sync_cfg = sync_cfg
         self._local_root = local_root.resolve()
         self._sync_mapping = sync_mapping
         self._v2_event_queue = v2_event_queue
+        self._ai_cfg = ai_cfg or {}
         self._debounce = float(sync_cfg.get("debounce_seconds") or 1.0)
         self._timers: dict[str, threading.Timer] = {}
         self._lock = threading.Lock()
@@ -261,6 +303,7 @@ class DebouncedUploader:
                             self._sync_cfg.get("backup_remote_previous", True)
                         ),
                         mode=mode,
+                        ai_cfg=self._ai_cfg,
                     )
                     for msg in errs[:20]:
                         LOG.warning("%s", msg)
@@ -284,6 +327,8 @@ class DebouncedUploader:
                             self._local_root,
                             self._sync_mapping,
                             backup_remote_previous=backup,
+                            sync_cfg=self._sync_cfg,
+                            ai_cfg=self._ai_cfg,
                         )
                         if (
                             ok
@@ -383,6 +428,7 @@ class WatcherService:
             local_root,
             self._sync_mapping,
             v2_event_queue=self._v2_event_queue,
+            ai_cfg=raw.get("ai") or {},
         )
         handler = SyncEventHandler(
             self._uploader,
@@ -428,6 +474,7 @@ def _cli_ask_yes_no(title: str, message: str) -> bool:
 def run_watcher(config_path: Path) -> None:
     load_dotenv()
     cfg = load_config(config_path)
+    apply_sync_defaults(cfg.get("sync") or {})
     from anchor_sync import prepare_anchor_sync_or_legacy
 
     mapping = prepare_anchor_sync_or_legacy(cfg, _cli_ask_yes_no, profile_id=None)

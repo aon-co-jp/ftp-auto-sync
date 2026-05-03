@@ -200,3 +200,17 @@ class ProfileStore:
         _name, cfg = row
         with dest.open("w", encoding="utf-8") as f:
             json.dump(cfg, f, ensure_ascii=False, indent=2)
+
+    def duplicate(self, profile_id: int, new_display_name: str) -> int:
+        row = self.get(profile_id)
+        if row is None:
+            raise KeyError(profile_id)
+        _name, cfg = row
+        return self.create(new_display_name.strip() or "COPY", cfg)
+
+    def import_json_file(self, src: Path, display_name: str) -> int:
+        with src.open(encoding="utf-8") as f:
+            raw = json.load(f)
+        if not isinstance(raw, dict):
+            raise ValueError("JSON のルートはオブジェクトである必要があります。")
+        return self.create(display_name.strip() or "import", raw)

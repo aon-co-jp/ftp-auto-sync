@@ -1,5 +1,5 @@
-# Build FTPAutoSync.exe (needs Python 3.10+ on PATH or env PYTHON=full\path\to\python.exe)
-# Output: dist\FTPAutoSync.exe
+# Build Ftp-Auto-Sync.exe (needs Python 3.10+ on PATH or env PYTHON=full\path\to\python.exe)
+# Output: dist\Ftp-Auto-Sync.exe
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 
@@ -35,12 +35,13 @@ Write-Host "Installing dependencies..."
 & $PythonExe -m pip install -q -r requirements.txt
 & $PythonExe -m pip install -q "pyinstaller>=6.0" "pyinstaller-hooks-contrib"
 
-Write-Host "Building FTPAutoSync.exe ..."
+Write-Host "Building Ftp-Auto-Sync.exe ..."
 & $PythonExe -m PyInstaller --noconfirm --clean ftp_auto_sync.spec
 
-$exe = Join-Path $PSScriptRoot "dist\FTPAutoSync.exe"
+$exe = Join-Path $PSScriptRoot "dist\Ftp-Auto-Sync.exe"
 if (Test-Path $exe) {
     Write-Host ("OK: " + $exe)
+    exit 0
 } else {
     Write-Host "Build failed: EXE not found."
     exit 1

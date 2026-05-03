@@ -61,6 +61,17 @@ python ftp_watcher.py -c path/to/config.json
 
 Output: `dist\FTPAutoSync.exe` (PyInstaller is installed by the script if missing).
 
+### Windows installer (Inno Setup)
+
+1. Install [Inno Setup 6](https://jrsoftware.org/isdl.php) on the build machine.
+2. From the repo root run:
+
+```powershell
+.\build_installer.ps1
+```
+
+This builds the EXE then compiles `installer\FTPAutoSync.iss`. Output: `release\FTPAutoSync_Setup_<version>.exe`. See [`installer/README.md`](installer/README.md). Bump `#define MyAppVersion` in `installer/FTPAutoSync.iss` when releasing.
+
 ### Configuration
 
 - Use the GUI to create and save **profiles** (FTP host, credentials, local root, sync options).
@@ -135,6 +146,17 @@ python ftp_watcher.py -c path/to/config.json
 ```
 
 成果物: `dist\FTPAutoSync.exe`（ビルドスクリプト内で PyInstaller を導入します）。
+
+### Windows インストーラー（Inno Setup）
+
+1. ビルド用 PC に [Inno Setup 6](https://jrsoftware.org/isdl.php) を入れる。
+2. リポジトリルートで:
+
+```powershell
+.\build_installer.ps1
+```
+
+`release\FTPAutoSync_Setup_<バージョン>.exe` が生成されます。詳細は [`installer/README.md`](installer/README.md)。バージョンは `installer\FTPAutoSync.iss` の `#define MyAppVersion` を変更。
 
 ### 設定について
 

@@ -15,7 +15,9 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 
+from ai_upload_rewrite import maybe_ai_rewrite_bytes
 from anchor_sync import _cwd_create_chain, upload_path_parts_for_file
+from ftp_mtime import should_upload_local_newer
 from ftp_util import ftp_connection
 
 LOG = logging.getLogger(__name__)
@@ -172,32 +174,49 @@ def _should_rewrite_body(filename: str, target: dict[str, Any]) -> bool:
     return raw_ext in _DEFAULT_TEXT_EXT
 
 
-def build_payload(local_path: Path, target: dict[str, Any]) -> bytes:
+def build_payload(
+    local_path: Path,
+    target: dict[str, Any],
+    *,
+    rel_posix: str,
+    sync_cfg: dict[str, Any] | None = None,
+    ai_cfg: dict[str, Any] | None = None,
+    deploy_label: str | None = None,
+) -> bytes:
     data = local_path.read_bytes()
     pairs = target.get("rewrite_pairs") or []
-    if not pairs or not _should_rewrite_body(local_path.name, target):
-        return data
-    try:
-        text = data.decode("utf-8")
-    except UnicodeDecodeError:
-        LOG.debug("UTF-8 でないため書き換えスキップ: %s", local_path)
-        return data
-    for pair in pairs:
-        if not isinstance(pair, dict):
-            continue
-        find_block = pair.get("find")
-        if find_block is None:
-            continue
-        rep = pair.get("replace")
-        if rep is None:
-            rep = ""
-        rep_s = str(rep)
-        # 左側: "検索A|検索B|…" を複数条件として順に同一の置換後へ（TAB で左と右を区切った行）
-        for seg in str(find_block).split("|"):
-            seg = seg.strip()
-            if seg:
-                text = text.replace(seg, rep_s)
-    return text.encode("utf-8")
+    if pairs and _should_rewrite_body(local_path.name, target):
+        try:
+            text = data.decode("utf-8")
+        except UnicodeDecodeError:
+            LOG.debug("UTF-8 でないため書き換えスキップ: %s", local_path)
+        else:
+            for pair in pairs:
+                if not isinstance(pair, dict):
+                    continue
+                find_block = pair.get("find")
+                if find_block is None:
+                    continue
+                rep = pair.get("replace")
+                if rep is None:
+                    rep = ""
+                rep_s = str(rep)
+                for seg in str(find_block).split("|"):
+                    seg = seg.strip()
+                    if seg:
+                        text = text.replace(seg, rep_s)
+            data = text.encode("utf-8")
+    if sync_cfg is not None and ai_cfg is not None:
+        data = maybe_ai_rewrite_bytes(
+            data,
+            local_path.name,
+            rel_posix,
+            sync_cfg,
+            ai_cfg,
+            deploy_context=deploy_label,
+            source_path=local_path,
+        )
+    return data
 
 
 def _remote_file_exists(ftp: FTP, name: str) -> bool:
@@ -244,10 +263,17 @@ def upload_payload(
     filename: str,
     payload: bytes,
     backup_remote_previous: bool,
-) -> None:
+    *,
+    local_path: Path | None = None,
+    sync_cfg: dict[str, Any] | None = None,
+) -> bool:
+    """True = STOR した。False = 新しさ条件でスキップ。"""
     start = ftp.pwd()
     try:
         _cwd_create_chain(ftp, dir_parts)
+        if local_path is not None and sync_cfg is not None:
+            if not should_upload_local_newer(ftp, filename, local_path, sync_cfg):
+                return False
         if backup_remote_previous:
             try:
                 _archive_remote_previous_version(ftp, filename)
@@ -266,6 +292,7 @@ def upload_payload(
         )
         bio = BytesIO(payload)
         ftp.storbinary(f"STOR {filename}", bio, blocksize=65536)
+        return True
     finally:
         try:
             ftp.cwd(start)
@@ -282,6 +309,7 @@ def run_multi_deploy_uploads(
     *,
     backup_remote_previous: bool,
     mode: str,
+    ai_cfg: dict[str, Any] | None = None,
 ) -> tuple[int, int, list[str]]:
     """
     mode: additional | targets_only
@@ -307,15 +335,25 @@ def run_multi_deploy_uploads(
         nonlocal ok_count
         try:
             with ftp_connection(main_ftp_cfg) as ftp:
-                payload = local_path.read_bytes()
-                upload_payload(
+                payload = build_payload(
+                    local_path,
+                    {},
+                    rel_posix=rel,
+                    sync_cfg=sync_cfg,
+                    ai_cfg=ai_cfg or {},
+                    deploy_label="default FTP",
+                )
+                did = upload_payload(
                     ftp,
                     list(base_dir),
                     filename,
                     payload,
                     backup_remote_previous,
+                    local_path=local_path,
+                    sync_cfg=sync_cfg,
                 )
-            ok_count += 1
+            if did:
+                ok_count += 1
             return True
         except Exception as e:
             errors.append(f"既定FTP: {e}")
@@ -332,17 +370,27 @@ def run_multi_deploy_uploads(
         try:
             cfg = merged_ftp_cfg(main_ftp_cfg, t)
             dir_parts = append_remote_segments(list(base_dir), t)
-            payload = build_payload(local_path, t)
+            payload = build_payload(
+                local_path,
+                t,
+                rel_posix=rel,
+                sync_cfg=sync_cfg,
+                ai_cfg=ai_cfg or {},
+                deploy_label=label,
+            )
             with ftp_connection(cfg) as ftp:
-                upload_payload(
+                did = upload_payload(
                     ftp,
                     dir_parts,
                     filename,
                     payload,
                     backup_remote_previous,
+                    local_path=local_path,
+                    sync_cfg=sync_cfg,
                 )
-            ok_count += 1
-            LOG.info("マルチデプロイ成功: %s", label)
+            if did:
+                ok_count += 1
+                LOG.info("マルチデプロイ成功: %s", label)
         except Exception as e:
             errors.append(f"{label}: {e}")
             LOG.warning("マルチデプロイ失敗 (%s): %s", label, e, exc_info=True)
