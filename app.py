@@ -1,5 +1,5 @@
 """
-Ftp-Auto-Sync — Windows 向け GUI（tkinter）。Ver 3.5
+Ftp-Auto-Sync — Windows 向け GUI（tkinter）。Ver 4.0
 プロファイルは SQLite（最大 100,000 件）に保存: %LOCALAPPDATA%\\FTPAutoSync\\profiles.db
 Ver2: アップロード後などに Git／GitHub 確認。Ver3: FTP→ローカル一括ダウンロード（逆同期）。
 """
@@ -20,6 +20,7 @@ from typing import Any
 
 import ui_i18n
 from anchor_sync import prepare_anchor_sync_or_legacy
+from ftp_util import test_ftp_login
 from bulk_remote_select_dialog import show_bulk_remote_folder_dialog
 from deploy_targets_dialog import DeployTargetsDialog
 from ftp_watcher import WatcherService, load_config
@@ -195,10 +196,36 @@ class FtpAutoSyncApp(tk.Tk):
             )
         except tk.TclError:
             pass
+        self._update_sync_status_label()
+
+    def _update_sync_status_label(self) -> None:
+        lang = self.var_ui_lang.get()
+        watching = self._watcher is not None
+        key = "status_syncing" if watching else "status_idle"
+        try:
+            self.var_sync_status.set(ui_i18n.t(lang, key))
+        except (tk.TclError, AttributeError):
+            pass
+        try:
+            self.lbl_sync_status.configure(
+                foreground=("#1565c0" if watching else "#546e7a")
+            )
+        except (tk.TclError, AttributeError):
+            pass
 
     def _build_language_bar(self) -> None:
         bar = ttk.Frame(self)
         bar.pack(fill=tk.X, padx=8, pady=(4, 0))
+        self.var_sync_status = tk.StringVar(
+            value=ui_i18n.t(self.var_ui_lang.get(), "status_idle")
+        )
+        self.lbl_sync_status = ttk.Label(
+            bar,
+            textvariable=self.var_sync_status,
+            font=("Segoe UI", 10),
+            foreground="#546e7a",
+        )
+        self.lbl_sync_status.pack(side=tk.RIGHT, padx=(12, 4))
         self._lbl_lang_select = ttk.Label(
             bar, text=ui_i18n.t(self.var_ui_lang.get(), "lang_select")
         )
@@ -279,6 +306,13 @@ class FtpAutoSyncApp(tk.Tk):
         )
         self._reg_i18n(self.btn_pf_dup, "text", "btn_duplicate")
         self.btn_pf_dup.pack(side=tk.LEFT, padx=2)
+        self.btn_pf_rename = ttk.Button(
+            bf,
+            text=ui_i18n.t(self.var_ui_lang.get(), "btn_rename_profile"),
+            command=self._rename_profile_display_name,
+        )
+        self._reg_i18n(self.btn_pf_rename, "text", "btn_rename_profile")
+        self.btn_pf_rename.pack(side=tk.LEFT, padx=2)
         self.btn_pf_export = ttk.Button(
             bf, text=ui_i18n.t(self.var_ui_lang.get(), "btn_export"), command=self._export_profile_json
         )
@@ -358,6 +392,24 @@ class FtpAutoSyncApp(tk.Tk):
         ttk.Entry(frm, textvariable=self.var_password, width=20, show="*").grid(
             row=r, column=3, sticky=tk.W, pady=2
         )
+        r += 1
+
+        lak = ttk.Label(frm, text=ui_i18n.t(self.var_ui_lang.get(), "lbl_ftp_auth_key"))
+        self._reg_i18n(lak, "text", "lbl_ftp_auth_key")
+        lak.grid(row=r, column=0, sticky=tk.W, pady=2)
+        self.var_ftp_auth_key = tk.StringVar()
+        ttk.Entry(frm, textvariable=self.var_ftp_auth_key, width=50, show="*").grid(
+            row=r, column=1, columnspan=3, sticky=tk.EW, pady=2
+        )
+        r += 1
+
+        self.btn_ftp_test = ttk.Button(
+            frm,
+            text=ui_i18n.t(self.var_ui_lang.get(), "btn_ftp_test"),
+            command=self._test_ftp_connection,
+        )
+        self._reg_i18n(self.btn_ftp_test, "text", "btn_ftp_test")
+        self.btn_ftp_test.grid(row=r, column=0, columnspan=4, sticky=tk.W, pady=(0, 4))
         r += 1
 
         ll = ttk.Label(frm, text=ui_i18n.t(self.var_ui_lang.get(), "lbl_watch"))
@@ -1120,6 +1172,8 @@ class FtpAutoSyncApp(tk.Tk):
                 "username": self.var_user.get().strip(),
                 "password": self.var_password.get(),
                 "password_env": "FTP_PASSWORD",
+                "auth_key": self.var_ftp_auth_key.get().strip(),
+                "auth_key_env": "FTP_AUTH_KEY",
                 "use_tls": bool(self.var_tls.get()),
                 "passive": bool(self.var_passive.get()),
                 "timeout": 60,
@@ -1181,6 +1235,8 @@ class FtpAutoSyncApp(tk.Tk):
         self.var_user.set(str(ftp.get("username", "")))
         pw = ftp.get("password")
         self.var_password.set(str(pw) if pw is not None else "")
+        ak = ftp.get("auth_key")
+        self.var_ftp_auth_key.set(str(ak).strip() if ak is not None else "")
         self.var_tls.set(bool(ftp.get("use_tls")))
         self.var_passive.set(bool(ftp.get("passive", True)))
         self.var_local.set(str(sync.get("local_root", "")))
@@ -1584,6 +1640,7 @@ class FtpAutoSyncApp(tk.Tk):
                 return
         self.btn_start.configure(state=tk.DISABLED)
         self.btn_stop.configure(state=tk.NORMAL)
+        self._update_sync_status_label()
         logging.info("監視を開始しました。")
 
     def _save_config_silent(self) -> None:
@@ -1612,7 +1669,70 @@ class FtpAutoSyncApp(tk.Tk):
                 self._runtime_cfg = None
         self.btn_start.configure(state=tk.NORMAL)
         self.btn_stop.configure(state=tk.DISABLED)
+        self._update_sync_status_label()
         logging.info("監視を停止しました。")
+
+    def _validate_ftp_for_login_test(self, data: dict) -> str | None:
+        ftp = data.get("ftp") or {}
+        if not (ftp.get("host") or "").strip():
+            return "FTP ホストを入力してください。"
+        return None
+
+    def _test_ftp_connection(self) -> None:
+        data = self._config_from_ui()
+        err = self._validate_ftp_for_login_test(data)
+        if err:
+            messagebox.showerror(self._app_title(), err)
+            return
+        ftp = dict(data.get("ftp") or {})
+
+        def worker() -> None:
+            ok, msg = test_ftp_login(ftp)
+            self.after(0, lambda o=ok, m=msg: self._ftp_test_done(o, m))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _ftp_test_done(self, ok: bool, msg: str) -> None:
+        if ok:
+            messagebox.showinfo(
+                self._app_title(),
+                ui_i18n.t(self.var_ui_lang.get(), "ftp_test_ok"),
+            )
+        else:
+            messagebox.showerror(self._app_title(), msg)
+
+    def _rename_profile_display_name(self) -> None:
+        if self._current_profile_id is None:
+            messagebox.showinfo(
+                self._app_title(),
+                ui_i18n.t(self.var_ui_lang.get(), "profile_rename_need_select"),
+            )
+            return
+        row = self._store.get(self._current_profile_id)
+        if not row:
+            return
+        old_name, cfg = row
+        cur = self.var_profile_name.get().strip() or old_name
+        name = simpledialog.askstring(
+            self._app_title(),
+            ui_i18n.t(self.var_ui_lang.get(), "profile_rename_prompt"),
+            initialvalue=cur,
+            parent=self,
+        )
+        if not name or not name.strip():
+            return
+        name = name.strip()
+        try:
+            self._store.update(self._current_profile_id, name, cfg)
+            self.var_profile_name.set(name)
+            self._refresh_profile_list()
+            self._select_listbox_by_id(self._current_profile_id)
+            messagebox.showinfo(
+                self._app_title(),
+                ui_i18n.t(self.var_ui_lang.get(), "profile_renamed_ok"),
+            )
+        except Exception as e:
+            messagebox.showerror(self._app_title(), str(e))
 
     def _on_close(self) -> None:
         self._stop_watcher()

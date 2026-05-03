@@ -4,6 +4,8 @@
     "port": 21,
     "username": "your_user",
     "password_env": "FTP_PASSWORD",
+    "auth_key": "",
+    "auth_key_env": "FTP_AUTH_KEY",
     "use_tls": false,
     "passive": true,
     "timeout": 60

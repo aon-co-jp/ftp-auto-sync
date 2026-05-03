@@ -1,8 +1,8 @@
-"""Ftp-Auto-Sync GUI 文言（Ver 3.5）。キーは英語スラッグ。"""
+"""Ftp-Auto-Sync GUI 文言（Ver 4.0）。キーは英語スラッグ。"""
 from __future__ import annotations
 
 APP_PRODUCT = "Ftp-Auto-Sync"
-APP_VERSION = "3.5.0"
+APP_VERSION = "4.0.0"
 
 LANG_CODES = (
     "ja",
@@ -38,6 +38,15 @@ LANG_RADIO_LABELS: dict[str, str] = {
 _EN: dict[str, str] = {
     "app_title": f"{APP_PRODUCT} {APP_VERSION}",
     "lang_select": "Language",
+    "status_idle": "Idle",
+    "status_syncing": "Syncing…",
+    "lbl_ftp_auth_key": "Auth key (ACCT / second password, optional)",
+    "btn_ftp_test": "Test FTP login",
+    "ftp_test_ok": "FTP login succeeded.",
+    "btn_rename_profile": "Rename profile",
+    "profile_renamed_ok": "Profile display name was updated.",
+    "profile_rename_need_select": "Select a profile in the list first.",
+    "profile_rename_prompt": "New display name",
     "profile_lf": "Profiles (FTP / server)",
     "lbl_display_name": "Display name",
     "lbl_search": "Search",
@@ -141,6 +150,15 @@ _EN: dict[str, str] = {
 _JA: dict[str, str] = {
     "app_title": f"{APP_PRODUCT} {APP_VERSION}",
     "lang_select": "表示言語",
+    "status_idle": "待機中",
+    "status_syncing": "同期中です。",
+    "lbl_ftp_auth_key": "認証キー（ACCT／第二パスワード・任意）",
+    "btn_ftp_test": "FTP 接続テスト",
+    "ftp_test_ok": "FTP ログインに成功しました。",
+    "btn_rename_profile": "プロファイル名変更",
+    "profile_renamed_ok": "プロファイル表示名を更新しました。",
+    "profile_rename_need_select": "リストで名前を変更するプロファイルを選択してください。",
+    "profile_rename_prompt": "新しいプロファイル表示名",
     "profile_lf": "プロファイル（FTP／サーバー）",
     "lbl_display_name": "表示名",
     "lbl_search": "検索",
