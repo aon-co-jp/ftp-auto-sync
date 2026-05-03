@@ -69,7 +69,8 @@ def should_skip_sync_scope(
 ) -> bool:
     """
     True のとき自動同期（アップロード）の対象外。
-    優先: ★除外リスト → アプリデータ配下スキップ → 〻同期でドメイン要件免除 → ドメイン階層なしは既定で除外。
+    優先: ★除外リスト → アプリデータ配下スキップ → 〻同期でドメイン要件免除。
+    sync_default_domain_scope が真のときのみ、ドメイン風フォルダ（名前に「.」を含む階層）が無いパスを除外。
     """
     rel = rel_posix_under_root(path, local_root)
     if rel is None:
@@ -89,7 +90,8 @@ def should_skip_sync_scope(
         if is_under_app_datadir(path):
             return True
 
-    if bool(sync_cfg.get("sync_default_domain_scope", True)):
+    # 既定 False: ドメイン風フォルダが無いだけで同期しないと、一般プロジェクトで一切アップロードされない
+    if bool(sync_cfg.get("sync_default_domain_scope", False)):
         if not _rel_has_domain_like_folder(rel, path.is_file()):
             return True
 

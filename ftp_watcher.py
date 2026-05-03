@@ -39,7 +39,7 @@ def load_config(path: Path) -> dict[str, Any]:
 def apply_sync_defaults(sync_cfg: dict[str, Any]) -> None:
     """V3.5 既定: サーバー上のファイルよりローカルが新しいときだけ自動アップロード。"""
     sync_cfg.setdefault("only_upload_if_local_newer", True)
-    sync_cfg.setdefault("sync_default_domain_scope", True)
+    sync_cfg.setdefault("sync_default_domain_scope", False)
     sync_cfg.setdefault("sync_skip_under_app_datadir", True)
     sync_cfg.setdefault("sync_star_exclude_rel_roots", [])
     sync_cfg.setdefault("sync_mark_include_rel_roots", [])
@@ -388,7 +388,9 @@ class SyncEventHandler(FileSystemEventHandler):
         if event.event_type not in ("modified", "created", "moved"):
             return
         path = Path(event.dest_path if event.event_type == "moved" else event.src_path)
-        if not str(path.resolve()).startswith(str(self._local_root)):
+        try:
+            path.resolve().relative_to(self._local_root.resolve())
+        except ValueError:
             return
         self._uploader.schedule(path)
 
@@ -416,11 +418,16 @@ class WatcherService:
     def start(self) -> None:
         load_dotenv()
         raw = self._load_raw_config()
+        apply_sync_defaults(raw.get("sync") or {})
         ftp_cfg = raw["ftp"]
         sync_cfg = raw["sync"]
         local_root = Path(sync_cfg["local_root"]).expanduser().resolve()
         if not local_root.is_dir():
             raise RuntimeError(f"local_root が存在しません: {local_root}")
+
+        with ftp_connection(ftp_cfg) as ftp:
+            ftp.voidcmd("NOOP")
+        LOG.info("FTP ログイン確認（NOOP）に成功しました。")
 
         self._uploader = DebouncedUploader(
             ftp_cfg,
