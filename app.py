@@ -1,5 +1,5 @@
 """
-Ftp-Auto-Sync — Windows 向け GUI（tkinter）。Ver 4.7
+Ftp-Auto-Sync — Windows 向け GUI（tkinter）。Ver 4.8
 プロファイルは SQLite（最大 100,000 件）に保存: %LOCALAPPDATA%\\FTPAutoSync\\profiles.db
 Ver2: アップロード後などに Git／GitHub 確認。Ver3: FTP→ローカル一括ダウンロード（逆同期）。
 """
@@ -143,12 +143,14 @@ class FtpAutoSyncApp(tk.Tk):
         self._runtime_cfg: dict[str, Any] | None = None
         self._watcher: WatcherService | None = None
         self._watcher_lock = threading.Lock()
+        self._sync_watching_ui: bool = False
         self._current_profile_id: int | None = None
         self._profile_list_ids: list[int] = []
         self._v3_busy = False
         self._deploy_targets: list[dict[str, Any]] = normalize_deploy_targets([])
 
         self._build_language_bar()
+        self._setup_main_scroll_area()
         self._build_profile_panel()
         self._build_form()
         self._build_log()
@@ -218,15 +220,17 @@ class FtpAutoSyncApp(tk.Tk):
 
     def _update_sync_status_label(self) -> None:
         lang = self.var_ui_lang.get()
-        watching = self._watcher is not None
+        watching = bool(self._sync_watching_ui) and self._watcher is not None
         key = "status_syncing" if watching else "status_idle"
+        text = ui_i18n.t(lang, key)
         try:
-            self.var_sync_status.set(ui_i18n.t(lang, key))
+            self.var_sync_status.set(text)
         except (tk.TclError, AttributeError):
             pass
         try:
             self.lbl_sync_status.configure(
-                foreground=("#1565c0" if watching else "#546e7a")
+                text=text,
+                foreground=("#1565c0" if watching else "#546e7a"),
             )
         except (tk.TclError, AttributeError):
             pass
@@ -235,10 +239,59 @@ class FtpAutoSyncApp(tk.Tk):
         except tk.TclError:
             pass
 
+    def _setup_main_scroll_area(self) -> None:
+        """プロファイル〜ログまでを縦スクロール可能にする（上部の言語バーは固定）。"""
+        body = ttk.Frame(self)
+        body.pack(fill=tk.BOTH, expand=True)
+        self._main_canvas = tk.Canvas(body, highlightthickness=0, borderwidth=0)
+        self._main_vscroll = ttk.Scrollbar(
+            body, orient=tk.VERTICAL, command=self._main_canvas.yview
+        )
+        self._main_canvas.configure(yscrollcommand=self._main_vscroll.set)
+        self._scroll_inner = ttk.Frame(self._main_canvas)
+        self._scroll_inner_id = self._main_canvas.create_window(
+            (0, 0), window=self._scroll_inner, anchor=tk.NW
+        )
+
+        def _on_inner_configure(_event: tk.Event | None = None) -> None:
+            self._main_canvas.configure(scrollregion=self._main_canvas.bbox(tk.ALL))
+            self.after_idle(self._sync_anchor_labels_wraplength)
+
+        def _on_canvas_configure(event: tk.Event) -> None:
+            if int(event.width) > 1:
+                self._main_canvas.itemconfigure(self._scroll_inner_id, width=int(event.width))
+
+        self._scroll_inner.bind("<Configure>", _on_inner_configure)
+        self._main_canvas.bind("<Configure>", _on_canvas_configure)
+        self._main_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self._main_vscroll.pack(side=tk.RIGHT, fill=tk.Y)
+        self._bind_main_canvas_mousewheel()
+        self._body_parent = self._scroll_inner
+
+    def _bind_main_canvas_mousewheel(self) -> None:
+        c = self._main_canvas
+
+        def _wheel(event: tk.Event) -> str | None:
+            if getattr(event, "delta", 0):
+                c.yview_scroll(int(-1 * (event.delta / 120)), "units")
+            return "break"
+
+        def _linux_up(_event: tk.Event) -> None:
+            c.yview_scroll(-1, "units")
+
+        def _linux_down(_event: tk.Event) -> None:
+            c.yview_scroll(1, "units")
+
+        for w in (c, self._scroll_inner):
+            w.bind("<MouseWheel>", _wheel)
+            w.bind("<Button-4>", _linux_up)
+            w.bind("<Button-5>", _linux_down)
+
     def _build_language_bar(self) -> None:
         bar = ttk.Frame(self)
         bar.pack(fill=tk.X, padx=8, pady=(4, 0))
         bar.columnconfigure(1, weight=1)
+        bar.columnconfigure(2, weight=0, minsize=168)
         bar_left = ttk.Frame(bar)
         bar_left.grid(row=0, column=0, sticky=tk.W)
         self.var_sync_status = tk.StringVar(
@@ -268,7 +321,7 @@ class FtpAutoSyncApp(tk.Tk):
 
     def _build_profile_panel(self) -> None:
         pf = ttk.LabelFrame(
-            self,
+            self._body_parent,
             text=ui_i18n.t(
                 self.var_ui_lang.get(),
                 "profile_lf",
@@ -370,7 +423,7 @@ class FtpAutoSyncApp(tk.Tk):
 
     def _build_form(self) -> None:
         frm = ttk.LabelFrame(
-            self, text=ui_i18n.t(self.var_ui_lang.get(), "conn_lf"), padding=8
+            self._body_parent, text=ui_i18n.t(self.var_ui_lang.get(), "conn_lf"), padding=8
         )
         self._lf_conn = frm
         self._reg_i18n(frm, "text", "conn_lf")
@@ -510,7 +563,7 @@ class FtpAutoSyncApp(tk.Tk):
         r += 1
         self._build_sync_scope_panel()
         af = ttk.LabelFrame(
-            self, text=ui_i18n.t(self.var_ui_lang.get(), "anchor_lf"), padding=8
+            self._body_parent, text=ui_i18n.t(self.var_ui_lang.get(), "anchor_lf"), padding=8
         )
         self._lf_anchor = af
         self._reg_i18n(af, "text", "anchor_lf")
@@ -612,7 +665,7 @@ class FtpAutoSyncApp(tk.Tk):
         self._build_delta_ai_panel()
 
         vf = ttk.LabelFrame(
-            self,
+            self._body_parent,
             text=ui_i18n.t(self.var_ui_lang.get(), "ver2_lf"),
             padding=8,
         )
@@ -650,7 +703,7 @@ class FtpAutoSyncApp(tk.Tk):
         vf.columnconfigure(3, weight=1)
 
         v3f = ttk.LabelFrame(
-            self,
+            self._body_parent,
             text=ui_i18n.t(self.var_ui_lang.get(), "v3_lf"),
             padding=8,
         )
@@ -689,7 +742,7 @@ class FtpAutoSyncApp(tk.Tk):
         v3f.columnconfigure(1, weight=1)
 
         mdf = ttk.LabelFrame(
-            self,
+            self._body_parent,
             text=ui_i18n.t(self.var_ui_lang.get(), "multi_lf"),
             padding=8,
         )
@@ -763,7 +816,7 @@ class FtpAutoSyncApp(tk.Tk):
 
     def _build_sync_scope_panel(self) -> None:
         scf = ttk.LabelFrame(
-            self,
+            self._body_parent,
             text=ui_i18n.t(self.var_ui_lang.get(), "sync_scope_lf"),
             padding=8,
         )
@@ -836,7 +889,7 @@ class FtpAutoSyncApp(tk.Tk):
 
     def _build_delta_ai_panel(self) -> None:
         df = ttk.LabelFrame(
-            self,
+            self._body_parent,
             text=ui_i18n.t(self.var_ui_lang.get(), "delta_ai_lf"),
             padding=8,
         )
@@ -910,11 +963,11 @@ class FtpAutoSyncApp(tk.Tk):
 
     def _build_log(self) -> None:
         lf = ttk.LabelFrame(
-            self, text=ui_i18n.t(self.var_ui_lang.get(), "log_lf"), padding=4
+            self._body_parent, text=ui_i18n.t(self.var_ui_lang.get(), "log_lf"), padding=4
         )
         self._lf_log = lf
         self._reg_i18n(lf, "text", "log_lf")
-        lf.pack(fill=tk.BOTH, expand=True, padx=8, pady=4)
+        lf.pack(fill=tk.X, expand=False, padx=8, pady=4)
         self.txt_log = tk.Text(lf, height=12, wrap=tk.WORD, state=tk.DISABLED, font=("Consolas", 9))
         scroll = ttk.Scrollbar(lf, command=self.txt_log.yview)
         self.txt_log.configure(yscrollcommand=scroll.set)
@@ -922,7 +975,7 @@ class FtpAutoSyncApp(tk.Tk):
         scroll.pack(side=tk.RIGHT, fill=tk.Y)
 
     def _build_buttons(self) -> None:
-        bf = ttk.Frame(self, padding=6)
+        bf = ttk.Frame(self._body_parent, padding=6)
         bf.pack(fill=tk.X)
         self.btn_start = ttk.Button(
             bf, text=ui_i18n.t(self.var_ui_lang.get(), "btn_start"), command=self._start_watcher
@@ -1672,9 +1725,11 @@ class FtpAutoSyncApp(tk.Tk):
                 self._runtime_cfg = dict(cfg)
                 self._watcher = WatcherService(dict(cfg), mapping, self._v2_queue)
                 self._watcher.start()
+                self._sync_watching_ui = True
             except Exception as e:
                 self._watcher = None
                 self._runtime_cfg = None
+                self._sync_watching_ui = False
                 messagebox.showerror(self._app_title(), str(e))
                 return
         self.btn_start.configure(state=tk.DISABLED)
@@ -1712,6 +1767,7 @@ class FtpAutoSyncApp(tk.Tk):
             finally:
                 self._watcher = None
                 self._runtime_cfg = None
+                self._sync_watching_ui = False
         self.btn_start.configure(state=tk.NORMAL)
         self.btn_stop.configure(state=tk.DISABLED)
         self._update_sync_status_label()
@@ -1743,8 +1799,8 @@ class FtpAutoSyncApp(tk.Tk):
         else:
             messagebox.showerror(self._app_title(), msg)
 
-    def _autosave_ftp_auth_key_to_profile_if_possible(self) -> bool:
-        """認証キー（入力欄または環境変数）を、選択中プロファイルへ可能なら書き込む。"""
+    def _autosave_ftp_credentials_to_profile_after_ftp_ok(self) -> bool:
+        """FTP 接続成功後、フォームの FTP ブロック（認証キー・ホスト等）を選択中プロファイルへ書き込む。"""
         pid = self._current_profile_id
         if pid is None:
             return False
@@ -1753,34 +1809,27 @@ class FtpAutoSyncApp(tk.Tk):
             return False
         name_stored, cfg = row
         cfg = copy.deepcopy(cfg)
-        ftp_u = self._config_from_ui().get("ftp") or {}
-        ftp = dict(cfg.get("ftp") or {})
-        ak_ui = (self.var_ftp_auth_key.get() or "").strip()
-        resolved = resolve_ftp_auth_key(ftp_u)
-        want = ak_ui if ak_ui else (resolved or "").strip()
-        if not want:
-            return False
-        have = (ftp.get("auth_key") or "").strip()
-        env_nm = (ftp_u.get("auth_key_env") or "FTP_AUTH_KEY").strip() or "FTP_AUTH_KEY"
-        cur_env = (ftp.get("auth_key_env") or "FTP_AUTH_KEY").strip() or "FTP_AUTH_KEY"
-        if want == have and env_nm == cur_env:
-            return False
-        ftp["auth_key"] = want
-        ftp["auth_key_env"] = env_nm
-        cfg["ftp"] = ftp
+        ui = self._config_from_ui()
+        new_ftp = dict(ui.get("ftp") or {})
+        ak_ui = (new_ftp.get("auth_key") or "").strip()
+        if not ak_ui:
+            rk = resolve_ftp_auth_key(new_ftp)
+            if rk:
+                new_ftp["auth_key"] = rk
+        cfg["ftp"] = new_ftp
         name = self.var_profile_name.get().strip() or name_stored or "無題"
         try:
             self._store.update(pid, name, cfg)
-            if not ak_ui and resolved:
-                self.var_ftp_auth_key.set(resolved)
-            logging.info("認証キーをプロファイル id=%s に自動保存しました。", pid)
+            if (new_ftp.get("auth_key") or "").strip():
+                self.var_ftp_auth_key.set(str(new_ftp.get("auth_key") or ""))
+            logging.info("FTP 設定（認証キー含む）をプロファイル id=%s に自動保存しました。", pid)
             return True
         except Exception as e:
-            logging.warning("認証キーの自動保存に失敗: %s", e)
+            logging.warning("FTP 自動保存に失敗: %s", e)
             return False
 
     def _show_ftp_login_success_auth_key_dialog(self) -> None:
-        saved = self._autosave_ftp_auth_key_to_profile_if_possible()
+        saved = self._autosave_ftp_credentials_to_profile_after_ftp_ok()
         messagebox.showinfo(
             ui_i18n.ftp_login_success_dialog_title(),
             ui_i18n.ftp_login_success_bilingual_body(saved_auth_key=saved),
