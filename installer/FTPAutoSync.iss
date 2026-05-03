@@ -3,7 +3,7 @@
 
 #define MyAppNameEn "Ftp-Auto-Sync"
 #define MyAppNameJp "Ftp-Auto-Sync"
-#define MyAppVersion "4.5.0"
+#define MyAppVersion "4.7.0"
 #define MyAppPublisher "ftp-auto-sync contributors"
 #define MyAppExeName "Ftp-Auto-Sync.exe"
 #define MyAppURL "https://github.com/aon-co-jp/ftp-auto-sync"
