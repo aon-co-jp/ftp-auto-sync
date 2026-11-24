@@ -1,3 +1,5 @@
+> Latest translations / 翻訳の最新版: [0-LATEST-TRANSLATIONS.md](0-LATEST-TRANSLATIONS.md)
+
 # ftp-auto-sync
 
 **EN:** Watch a local folder and sync changes to FTP on Windows — optional anchor mapping, AI confirmation, and many profiles.  
