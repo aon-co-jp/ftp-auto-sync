@@ -1,3 +1,3 @@
 source: aon-co-jp/ftp-auto-sync
-commit: 95433c7b473ea0ed875d6eff70b9622d645890e7
-updated: 2026-11-25T04:52:22Z
+commit: a8bda135934b565e825f623d44c812b123856d47
+updated: 2026-11-25T05:50:31Z
